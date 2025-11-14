@@ -1,0 +1,19 @@
+import { Schema, model } from 'mongoose'
+
+// Partial schema for aba-worker - only includes fields actually used by the worker service
+const companySchema = new Schema({
+	name: {
+		type: String,
+		required: true,
+		unique: true,
+	},
+	lastActiveAt: {
+		type: Date,
+		required: false,
+		default: Date.now,
+	},
+}, { timestamps: true });
+
+const Company = model('Company', companySchema);
+
+export default Company;

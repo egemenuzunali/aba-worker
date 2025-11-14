@@ -1,0 +1,5 @@
+export const PURCHASE_INVOICE_STATUS = {
+	OPEN: 'OPEN',
+	COMPLETED: 'COMPLETED',
+	EXPIRED: 'EXPIRED',
+} as const;
