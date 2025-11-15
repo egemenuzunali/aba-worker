@@ -12,6 +12,11 @@ const companySchema = new Schema({
 		required: false,
 		default: Date.now,
 	},
+	serviceModules: {
+		apkEnabled: { type: Boolean, default: true },
+		invoiceStatusCheckingEnabled: { type: Boolean, default: true },
+		rdwSyncEnabled: { type: Boolean, default: true }
+	},
 }, { timestamps: true });
 
 const Company = model('Company', companySchema);

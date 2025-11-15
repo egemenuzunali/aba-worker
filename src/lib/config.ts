@@ -1,6 +1,5 @@
-import dotenv from 'dotenv'
 // Environment configuration with validation
-dotenv.config()
+// Note: dotenv is loaded in index.ts
 export interface Config {
 	port: number;
 	mongoString: string;

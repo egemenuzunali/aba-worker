@@ -24,12 +24,9 @@ export class MaintenanceReminderService {
 		let totalNotified = 0;
 
 		try {
-			// Find all companies active in the last year
-			const oneYearAgo = new Date();
-			oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
+			// Find all companies with APK enabled
 			const activeCompanies = await db.default.models.Company.find({
-				lastActiveAt: { $gte: oneYearAgo }
+				'serviceModules.apkEnabled': { $ne: false }
 			}).select('_id name');
 
 			console.log(`📊 Found ${activeCompanies.length} active companies to check`);

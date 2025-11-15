@@ -52,12 +52,9 @@ export class RdwSyncService {
 				}
 			}
 
-			// Find all companies active in the last year
-			const oneYearAgo = new Date();
-			oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
+			// Find all companies with RDW sync enabled
 			const activeCompanies = await db.default.models.Company.find({
-				lastActiveAt: { $gte: oneYearAgo }
+				'serviceModules.rdwSyncEnabled': { $ne: false }
 			}).select('_id name');
 
 			console.log(`📊 Found ${activeCompanies.length} active companies`);

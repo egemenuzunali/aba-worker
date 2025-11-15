@@ -58,12 +58,18 @@ export class StatusUpdateScheduler {
 					expiration_date: {
 						$lt: tomorrowStartOfDay,
 						$gte: twoYearsAgoStartOfDay
+					},
+					companyId: {
+						$in: await db.default.models.Company.find({
+							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+						}).distinct('_id')
 					}
 				},
 				{
 					_id: 1,
 					quote_number: 1,
-					clientId: 1
+					clientId: 1,
+					companyId: 1
 				}
 			).populate('clientId', 'name');
 
@@ -75,6 +81,11 @@ export class StatusUpdateScheduler {
 					expiration_date: {
 						$lt: tomorrowStartOfDay,
 						$gte: twoYearsAgoStartOfDay
+					},
+					companyId: {
+						$in: await db.default.models.Company.find({
+							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+						}).distinct('_id')
 					}
 				},
 				{ $set: { status: QUOTE_STATUS.EXPIRED } }
@@ -136,6 +147,11 @@ export class StatusUpdateScheduler {
 						$lt: tomorrowStartOfDay,
 						$gte: twoYearsAgoStartOfDay
 					},
+					companyId: {
+						$in: await db.default.models.Company.find({
+							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+						}).distinct('_id')
+					},
 					$expr: {
 						$lt: [
 							{ $sum: { $ifNull: ["$payments.amount", []] } },
@@ -146,7 +162,8 @@ export class StatusUpdateScheduler {
 				{
 					_id: 1,
 					invoice_number: 1,
-					clientId: 1
+					clientId: 1,
+					companyId: 1
 				}
 			).populate('clientId', 'name');
 
@@ -158,6 +175,11 @@ export class StatusUpdateScheduler {
 					expiration_date: {
 						$lt: tomorrowStartOfDay,
 						$gte: twoYearsAgoStartOfDay
+					},
+					companyId: {
+						$in: await db.default.models.Company.find({
+							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+						}).distinct('_id')
 					},
 					$expr: {
 						$lt: [
@@ -224,6 +246,11 @@ export class StatusUpdateScheduler {
 					expiration_date: {
 						$lt: tomorrowStartOfDay,
 						$gte: twoYearsAgoStartOfDay
+					},
+					companyId: {
+						$in: await db.default.models.Company.find({
+							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+						}).distinct('_id')
 					},
 					$expr: {
 						$lt: [

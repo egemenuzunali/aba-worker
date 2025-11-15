@@ -1,5 +1,9 @@
 
-import dotenv from 'dotenv'
+import dotenv from 'dotenv';
+
+// Load environment variables FIRST before any other imports
+dotenv.config();
+
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import express from 'express';
@@ -8,8 +12,6 @@ import mongoose from 'mongoose';
 import { boot } from "./lib/boot";
 import { config } from './lib/config';
 import { setupSecurity } from './lib/security';
-
-dotenv.config()
 
 // Validate configuration on startup
 try {
