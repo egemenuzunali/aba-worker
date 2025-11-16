@@ -62,7 +62,7 @@ export class StatusUpdateScheduler {
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
 			}).select('_id name');
 
-			logger.info(`Processing ${enabledCompanies.length} companies for expired quotes`);
+			logger.debug(`Processing ${enabledCompanies.length} companies for expired quotes`);
 
 			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
@@ -167,7 +167,7 @@ export class StatusUpdateScheduler {
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
 			}).select('_id name');
 
-			logger.info(`Processing ${enabledCompanies.length} companies for expired invoices`);
+			logger.debug(`Processing ${enabledCompanies.length} companies for expired invoices`);
 
 			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
@@ -284,7 +284,7 @@ export class StatusUpdateScheduler {
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
 			}).select('_id name');
 
-			logger.info(`Processing ${enabledCompanies.length} companies for expired purchase invoices`);
+			logger.debug(`Processing ${enabledCompanies.length} companies for expired purchase invoices`);
 
 			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
@@ -343,7 +343,7 @@ export class StatusUpdateScheduler {
 	 */
 	private async runExpiryCheck(): Promise<void> {
 		const { config } = require('../lib/config');
-		logger.info('Starting scheduled expiry check');
+		logger.debug('Starting scheduled expiry check');
 		const startTime = Date.now();
 
 		try {
