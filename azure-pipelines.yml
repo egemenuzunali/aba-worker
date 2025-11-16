@@ -16,7 +16,10 @@ steps:
     displayName: 'Install Docker on Agent'
   - task: Docker@2
     inputs:
-      containerRegistry: 'schadeautos dockker'
-      repository: 'schadeautosapp/scraper'
+      containerRegistry: 'Docker AutobedrijfAdmin'
+      repository: 'euzunali/aba-admin-mono-repo'
       command: 'buildAndPush'
       Dockerfile: '**/Dockerfile'
+      tags: |
+        aba-worker-$(Build.BuildId)
+        aba-worker-latest
