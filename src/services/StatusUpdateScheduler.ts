@@ -40,77 +40,85 @@ export class StatusUpdateScheduler {
 		const db = await import('../lib/db');
 		const { QUOTE_STATUS } = await import('../constants/quoteConstants');
 		const errors: string[] = [];
-		let updated = 0;
+		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired quotes (last 2 years)...');
+			console.log('🔄 Checking for expired quotes using processed date tracking...');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
-			const twoYearsAgo = new Date();
-			twoYearsAgo.setFullYear(new Date().getFullYear() - 2);
-			const twoYearsAgoStartOfDay = this.normalizeDateToStartOfDay(twoYearsAgo);
 
-			// First, find expired quotes to create notifications
-			const expiredQuotes = await db.default.models.Quote.find(
-				{
-					deleted: { $ne: true },
-					status: { $nin: [QUOTE_STATUS.COMPLETED, QUOTE_STATUS.CONFIRMED, QUOTE_STATUS.EXPIRED] },
-					expiration_date: {
-						$lt: tomorrowStartOfDay,
-						$gte: twoYearsAgoStartOfDay
-					},
-					companyId: {
-						$in: await db.default.models.Company.find({
-							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-						}).distinct('_id')
-					}
-				},
-				{
-					_id: 1,
-					quote_number: 1,
-					clientId: 1,
-					companyId: 1
-				}
-			).populate('clientId', 'name');
+			// Get all companies with invoice status checking enabled
+			const enabledCompanies = await db.default.models.Company.find({
+				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+			}).select('_id name serviceModules.lastExpiryCheckDate');
 
-			// Update expired quotes
-			const expiredResult = await db.default.models.Quote.updateMany(
-				{
-					deleted: { $ne: true },
-					status: { $nin: [QUOTE_STATUS.COMPLETED, QUOTE_STATUS.CONFIRMED, QUOTE_STATUS.EXPIRED] },
-					expiration_date: {
-						$lt: tomorrowStartOfDay,
-						$gte: twoYearsAgoStartOfDay
-					},
-					companyId: {
-						$in: await db.default.models.Company.find({
-							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-						}).distinct('_id')
-					}
-				},
-				{ $set: { status: QUOTE_STATUS.EXPIRED } }
-			);
+			console.log(`📊 Processing ${enabledCompanies.length} companies for expired quotes`);
 
-			updated = expiredResult.modifiedCount;
-
-			// Create notifications for expired quotes
-			const { NotificationService } = await import('../lib/notificationService');
-			for (const quote of expiredQuotes) {
+			// Process each company individually to track their last check date
+			for (const company of enabledCompanies) {
 				try {
-					await NotificationService.createQuoteExpiredNotification(
-						quote.companyId.toString(),
-						quote.quote_number?.toString() || '',
-						(quote.clientId as any)?.name || 'Onbekende klant',
-						quote._id.toString()
+					const lastCheckDate = company.serviceModules?.lastExpiryCheckDate || new Date('2020-01-01');
+
+					// Find expired quotes for this company that are newer than last check
+					const expiredQuotes = await db.default.models.Quote.find(
+						{
+							deleted: { $ne: true },
+							companyId: company._id,
+							status: { $nin: [QUOTE_STATUS.COMPLETED, QUOTE_STATUS.CONFIRMED, QUOTE_STATUS.EXPIRED] },
+							expiration_date: {
+								$lt: tomorrowStartOfDay,
+								$gt: lastCheckDate // Only newer than last check
+							}
+						},
+						{
+							_id: 1,
+							quote_number: 1,
+							clientId: 1,
+							companyId: 1
+						}
+					).populate('clientId', 'name');
+
+					if (expiredQuotes.length > 0) {
+						// Update expired quotes for this company
+						const expiredResult = await db.default.models.Quote.updateMany(
+							{
+								deleted: { $ne: true },
+								companyId: company._id,
+								status: { $nin: [QUOTE_STATUS.COMPLETED, QUOTE_STATUS.CONFIRMED, QUOTE_STATUS.EXPIRED] },
+								expiration_date: {
+									$lt: tomorrowStartOfDay,
+									$gt: lastCheckDate
+								}
+							},
+							{ $set: { status: QUOTE_STATUS.EXPIRED } }
+						);
+
+						totalUpdated += expiredResult.modifiedCount;
+
+						// Create notifications for expired quotes
+						for (const quote of expiredQuotes) {
+							try {
+								await this.createNotificationForExpiredQuote(quote, company.name);
+							} catch (notificationError) {
+								errors.push(`Failed to create notification for quote ${quote.quote_number}: ${notificationError}`);
+							}
+						}
+					}
+
+					// Update the company's last expiry check date
+					await db.default.models.Company.updateOne(
+						{ _id: company._id },
+						{ $set: { 'serviceModules.lastExpiryCheckDate': new Date() } }
 					);
-				} catch (notificationError) {
-					const errorMsg = `Failed to create notification for expired quote ${quote.quote_number}: ${(notificationError as Error).message}`;
+
+				} catch (companyError) {
+					const errorMsg = `Failed to process expired quotes for company ${company.name}: ${companyError}`;
 					console.error('❌', errorMsg);
 					errors.push(errorMsg);
 				}
 			}
 
-			console.log(`✅ Quote expiry check completed: ${updated} quotes marked as expired, ${expiredQuotes.length} notifications created`);
+			console.log(`✅ Quote expiry check completed: ${totalUpdated} quotes marked as expired across ${enabledCompanies.length} companies`);
 
 		} catch (error) {
 			const errorMsg = `Failed to update expired quotes: ${(error as Error).message}`;
@@ -118,7 +126,7 @@ export class StatusUpdateScheduler {
 			errors.push(errorMsg);
 		}
 
-		return { updated, errors };
+		return { updated: totalUpdated, errors };
 	}
 
 	/**
@@ -128,89 +136,97 @@ export class StatusUpdateScheduler {
 		const db = await import('../lib/db');
 		const { INVOICE_STATUS } = await import('../constants/invoiceConstants');
 		const errors: string[] = [];
-		let updated = 0;
+		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired invoices (last 2 years)...');
+			console.log('🔄 Checking for expired invoices using processed date tracking...');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
-			const twoYearsAgo = new Date();
-			twoYearsAgo.setFullYear(new Date().getFullYear() - 2);
-			const twoYearsAgoStartOfDay = this.normalizeDateToStartOfDay(twoYearsAgo);
 
-			// First, find expired invoices to create notifications
-			const expiredInvoices = await db.default.models.Invoice.find(
-				{
-					deleted: { $ne: true },
-					status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.COMPLETED, INVOICE_STATUS.EXPIRED] },
-					expiration_date: {
-						$lt: tomorrowStartOfDay,
-						$gte: twoYearsAgoStartOfDay
-					},
-					companyId: {
-						$in: await db.default.models.Company.find({
-							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-						}).distinct('_id')
-					},
-					$expr: {
-						$lt: [
-							{ $sum: { $ifNull: ["$payments.amount", []] } },
-							"$total_incl_vat"
-						]
-					}
-				},
-				{
-					_id: 1,
-					invoice_number: 1,
-					clientId: 1,
-					companyId: 1
-				}
-			).populate('clientId', 'name');
+			// Get all companies with invoice status checking enabled
+			const enabledCompanies = await db.default.models.Company.find({
+				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+			}).select('_id name serviceModules.lastExpiryCheckDate');
 
-			// Update expired invoices
-			const expiredResult = await db.default.models.Invoice.updateMany(
-				{
-					deleted: { $ne: true },
-					status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.COMPLETED, INVOICE_STATUS.EXPIRED] },
-					expiration_date: {
-						$lt: tomorrowStartOfDay,
-						$gte: twoYearsAgoStartOfDay
-					},
-					companyId: {
-						$in: await db.default.models.Company.find({
-							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-						}).distinct('_id')
-					},
-					$expr: {
-						$lt: [
-							{ $sum: { $ifNull: ["$payments.amount", []] } },
-							"$total_incl_vat"
-						]
-					}
-				},
-				{ $set: { status: INVOICE_STATUS.EXPIRED } }
-			);
+			console.log(`📊 Processing ${enabledCompanies.length} companies for expired invoices`);
 
-			updated = expiredResult.modifiedCount;
-
-			// Create notifications for expired invoices
-			const { NotificationService } = await import('../lib/notificationService');
-			for (const invoice of expiredInvoices) {
+			// Process each company individually to track their last check date
+			for (const company of enabledCompanies) {
 				try {
-					await NotificationService.createInvoiceExpiredNotification(
-						invoice.companyId.toString(),
-						invoice.invoice_number.toString(),
-						(invoice.clientId as any)?.name || 'Onbekende klant',
-						invoice._id.toString()
+					const lastCheckDate = company.serviceModules?.lastExpiryCheckDate || new Date('2020-01-01');
+
+					// Find expired invoices for this company that are newer than last check
+					const expiredInvoices = await db.default.models.Invoice.find(
+						{
+							deleted: { $ne: true },
+							companyId: company._id,
+							status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.COMPLETED, INVOICE_STATUS.EXPIRED] },
+							expiration_date: {
+								$lt: tomorrowStartOfDay,
+								$gt: lastCheckDate // Only newer than last check
+							},
+							$expr: {
+								$lt: [
+									{ $sum: "$payments.amount" },
+									"$total_incl_vat"
+								]
+							}
+						},
+						{
+							_id: 1,
+							invoice_number: 1,
+							clientId: 1,
+							companyId: 1
+						}
+					).populate('clientId', 'name');
+
+					if (expiredInvoices.length > 0) {
+						// Update expired invoices for this company
+						const expiredResult = await db.default.models.Invoice.updateMany(
+							{
+								deleted: { $ne: true },
+								companyId: company._id,
+								status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.COMPLETED, INVOICE_STATUS.EXPIRED] },
+								expiration_date: {
+									$lt: tomorrowStartOfDay,
+									$gt: lastCheckDate
+								},
+								$expr: {
+									$lt: [
+										{ $sum: { $ifNull: ["$payments.amount", []] } },
+										"$total_incl_vat"
+									]
+								}
+							},
+							{ $set: { status: INVOICE_STATUS.EXPIRED } }
+						);
+
+						totalUpdated += expiredResult.modifiedCount;
+
+						// Create notifications for expired invoices
+						for (const invoice of expiredInvoices) {
+							try {
+								await this.createNotificationForExpiredInvoice(invoice, company.name);
+							} catch (notificationError) {
+								errors.push(`Failed to create notification for invoice ${invoice.invoice_number}: ${notificationError}`);
+							}
+						}
+					}
+
+					// Update the company's last expiry check date
+					await db.default.models.Company.updateOne(
+						{ _id: company._id },
+						{ $set: { 'serviceModules.lastExpiryCheckDate': new Date() } }
 					);
-				} catch (notificationError) {
-					const errorMsg = `Failed to create notification for expired invoice ${invoice.invoice_number}: ${(notificationError as Error).message}`;
+
+				} catch (companyError) {
+					const errorMsg = `Failed to process expired invoices for company ${company.name}: ${companyError}`;
 					console.error('❌', errorMsg);
 					errors.push(errorMsg);
 				}
 			}
 
-			console.log(`✅ Invoice expiry check completed: ${updated} invoices marked as expired, ${expiredInvoices.length} notifications created`);
+			console.log(`✅ Invoice expiry check completed: ${totalUpdated} invoices marked as expired across ${enabledCompanies.length} companies`);
 
 		} catch (error) {
 			const errorMsg = `Failed to update expired invoices: ${(error as Error).message}`;
@@ -218,7 +234,7 @@ export class StatusUpdateScheduler {
 			errors.push(errorMsg);
 		}
 
-		return { updated, errors };
+		return { updated: totalUpdated, errors };
 	}
 
 	/**
@@ -228,43 +244,61 @@ export class StatusUpdateScheduler {
 		const db = await import('../lib/db');
 		const { PURCHASE_INVOICE_STATUS } = await import('../constants/purchaseInvoiceConstants');
 		const errors: string[] = [];
-		let updated = 0;
+		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired purchase invoices (last 2 years)...');
+			console.log('🔄 Checking for expired purchase invoices using processed date tracking...');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
-			const twoYearsAgo = new Date();
-			twoYearsAgo.setFullYear(new Date().getFullYear() - 2);
-			const twoYearsAgoStartOfDay = this.normalizeDateToStartOfDay(twoYearsAgo);
 
-			// Update expired purchase invoices
-			const expiredResult = await db.default.models.PurchaseInvoice.updateMany(
-				{
-					deleted: { $ne: true },
-					status: { $nin: [PURCHASE_INVOICE_STATUS.COMPLETED, PURCHASE_INVOICE_STATUS.EXPIRED] },
-					expiration_date: {
-						$lt: tomorrowStartOfDay,
-						$gte: twoYearsAgoStartOfDay
-					},
-					companyId: {
-						$in: await db.default.models.Company.find({
-							'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-						}).distinct('_id')
-					},
-					$expr: {
-						$lt: [
-							{ $sum: { $ifNull: ["$payments.amount", []] } },
-							"$total_incl_vat"
-						]
-					}
-				},
-				{ $set: { status: PURCHASE_INVOICE_STATUS.EXPIRED } }
-			);
+			// Get all companies with invoice status checking enabled
+			const enabledCompanies = await db.default.models.Company.find({
+				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
+			}).select('_id name serviceModules.lastExpiryCheckDate');
 
-			updated = expiredResult.modifiedCount;
+			console.log(`📊 Processing ${enabledCompanies.length} companies for expired purchase invoices`);
 
-			console.log(`✅ Purchase invoice expiry check completed: ${updated} purchase invoices marked as expired`);
+			// Process each company individually to track their last check date
+			for (const company of enabledCompanies) {
+				try {
+					const lastCheckDate = company.serviceModules?.lastExpiryCheckDate || new Date('2020-01-01');
+
+					// Update expired purchase invoices for this company that are newer than last check
+					const expiredResult = await db.default.models.PurchaseInvoice.updateMany(
+						{
+							deleted: { $ne: true },
+							companyId: company._id,
+							status: { $nin: [PURCHASE_INVOICE_STATUS.COMPLETED, PURCHASE_INVOICE_STATUS.EXPIRED] },
+							expiration_date: {
+								$lt: tomorrowStartOfDay,
+								$gt: lastCheckDate // Only newer than last check
+							},
+							$expr: {
+								$lt: [
+									{ $sum: "$payments.amount" },
+									"$total_incl_vat"
+								]
+							}
+						},
+						{ $set: { status: PURCHASE_INVOICE_STATUS.EXPIRED } }
+					);
+
+					totalUpdated += expiredResult.modifiedCount;
+
+					// Update the company's last expiry check date
+					await db.default.models.Company.updateOne(
+						{ _id: company._id },
+						{ $set: { 'serviceModules.lastExpiryCheckDate': new Date() } }
+					);
+
+				} catch (companyError) {
+					const errorMsg = `Failed to process expired purchase invoices for company ${company.name}: ${companyError}`;
+					console.error('❌', errorMsg);
+					errors.push(errorMsg);
+				}
+			}
+
+			console.log(`✅ Purchase invoice expiry check completed: ${totalUpdated} purchase invoices marked as expired across ${enabledCompanies.length} companies`);
 
 		} catch (error) {
 			const errorMsg = `Failed to update expired purchase invoices: ${(error as Error).message}`;
@@ -272,7 +306,7 @@ export class StatusUpdateScheduler {
 			errors.push(errorMsg);
 		}
 
-		return { updated, errors };
+		return { updated: totalUpdated, errors };
 	}
 
 	/**
@@ -548,5 +582,31 @@ export class StatusUpdateScheduler {
 			status[name] = !!job;
 		});
 		return status;
+	}
+
+	/**
+	 * Create notification for expired quote
+	 */
+	private async createNotificationForExpiredQuote(quote: any, companyName: string): Promise<void> {
+		const { NotificationService } = await import('../lib/notificationService');
+		await NotificationService.createQuoteExpiredNotification(
+			quote.companyId.toString(),
+			quote.quote_number?.toString() || '',
+			(quote.clientId as any)?.name || 'Onbekende klant',
+			quote._id.toString()
+		);
+	}
+
+	/**
+	 * Create notification for expired invoice
+	 */
+	private async createNotificationForExpiredInvoice(invoice: any, companyName: string): Promise<void> {
+		const { NotificationService } = await import('../lib/notificationService');
+		await NotificationService.createInvoiceExpiredNotification(
+			invoice.companyId.toString(),
+			invoice.invoice_number.toString(),
+			(invoice.clientId as any)?.name || 'Onbekende klant',
+			invoice._id.toString()
+		);
 	}
 }

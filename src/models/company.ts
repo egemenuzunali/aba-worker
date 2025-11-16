@@ -15,7 +15,8 @@ const companySchema = new Schema({
 	serviceModules: {
 		apkEnabled: { type: Boolean, default: true },
 		invoiceStatusCheckingEnabled: { type: Boolean, default: true },
-		rdwSyncEnabled: { type: Boolean, default: true }
+		rdwSyncEnabled: { type: Boolean, default: true },
+		lastExpiryCheckDate: { type: Date, default: () => new Date('2020-01-01') }
 	},
 }, { timestamps: true });
 

@@ -1,4 +1,4 @@
-import { Schema, model } from 'mongoose'
+import { Schema, model } from 'mongoose';
 
 // Partial schema for aba-worker - only includes fields actually used by the worker service
 const purchaseInvoiceSchema = new Schema({
@@ -20,6 +20,11 @@ const purchaseInvoiceSchema = new Schema({
 		enum: ['OPEN', 'COMPLETED', 'EXPIRED'],
 		required: true,
 		default: 'OPEN',
+	},
+	companyId: {
+		type: Schema.Types.ObjectId,
+		ref: 'Company',
+		required: true,
 	},
 	payments: [{
 		amount: {
