@@ -5,6 +5,10 @@ interface System {
 	_id: string;
 	lastRdwSync: Date;
 	lastWeeklyMaintenanceCheck: Date;
+	lastQuoteExpiryCheck: Date;
+	lastInvoiceExpiryCheck: Date;
+	lastPurchaseInvoiceExpiryCheck: Date;
+	lastApkStatusCheck: Date;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -16,6 +20,22 @@ const systemSchema = new Schema<System>(
 			required: false,
 		},
 		lastWeeklyMaintenanceCheck: {
+			type: Date,
+			required: false,
+		},
+		lastQuoteExpiryCheck: {
+			type: Date,
+			required: false,
+		},
+		lastInvoiceExpiryCheck: {
+			type: Date,
+			required: false,
+		},
+		lastPurchaseInvoiceExpiryCheck: {
+			type: Date,
+			required: false,
+		},
+		lastApkStatusCheck: {
 			type: Date,
 			required: false,
 		},

@@ -7,6 +7,15 @@ export interface Config {
 	logLevel: string;
 	rdwApiKey?: string;
 	rdwBaseUrl?: string;
+	// Service enable/disable flags
+	enableDocumentExpiryCheck: boolean;
+	enableQuoteExpiryCheck: boolean;
+	enableInvoiceExpiryCheck: boolean;
+	enablePurchaseInvoiceExpiryCheck: boolean;
+	enableRdwFullSync: boolean;
+	enableRdwDailySync: boolean;
+	enableApkStatusCheck: boolean;
+	enableMaintenanceReminders: boolean;
 }
 
 function validateConfig(): Config {
@@ -16,6 +25,19 @@ function validateConfig(): Config {
 	const logLevel = process.env.LOG_LEVEL || 'info';
 	const rdwApiKey = process.env.RDW_API_KEY || '';
 	const rdwBaseUrl = process.env.RDW_BASE_URL || '';
+
+	// Service enable/disable flags (default to true if not specified)
+	const enableDocumentExpiryCheck = process.env.ENABLE_DOCUMENT_EXPIRY_CHECK !== 'false';
+
+	// Granular document expiry flags (inherit from main flag if not specified)
+	const enableQuoteExpiryCheck = process.env.ENABLE_QUOTE_EXPIRY_CHECK !== 'false' && enableDocumentExpiryCheck;
+	const enableInvoiceExpiryCheck = process.env.ENABLE_INVOICE_EXPIRY_CHECK !== 'false' && enableDocumentExpiryCheck;
+	const enablePurchaseInvoiceExpiryCheck = process.env.ENABLE_PURCHASE_INVOICE_EXPIRY_CHECK !== 'false' && enableDocumentExpiryCheck;
+
+	const enableRdwFullSync = process.env.ENABLE_RDW_FULL_SYNC !== 'false';
+	const enableRdwDailySync = process.env.ENABLE_RDW_DAILY_SYNC !== 'false';
+	const enableApkStatusCheck = process.env.ENABLE_APK_STATUS_CHECK !== 'false';
+	const enableMaintenanceReminders = process.env.ENABLE_MAINTENANCE_REMINDERS !== 'false';
 
 	// Validate required environment variables
 	if (!mongoString) {
@@ -39,6 +61,19 @@ function validateConfig(): Config {
 		console.log('⚠️  RDW API key not configured (using mock data)');
 	}
 
+	// Log enabled services
+	console.log('📋 Worker Services Configuration:');
+	console.log(`   Document Expiry Check: ${enableDocumentExpiryCheck ? '✅ Enabled' : '❌ Disabled'}`);
+	if (enableDocumentExpiryCheck) {
+		console.log(`     - Quote Expiry: ${enableQuoteExpiryCheck ? '✅ Enabled' : '❌ Disabled'}`);
+		console.log(`     - Invoice Expiry: ${enableInvoiceExpiryCheck ? '✅ Enabled' : '❌ Disabled'}`);
+		console.log(`     - Purchase Invoice Expiry: ${enablePurchaseInvoiceExpiryCheck ? '✅ Enabled' : '❌ Disabled'}`);
+	}
+	console.log(`   RDW Full Sync (6-week): ${enableRdwFullSync ? '✅ Enabled' : '❌ Disabled'}`);
+	console.log(`   RDW Daily Sync: ${enableRdwDailySync ? '✅ Enabled' : '❌ Disabled'}`);
+	console.log(`   APK Status Check: ${enableApkStatusCheck ? '✅ Enabled' : '❌ Disabled'}`);
+	console.log(`   Maintenance Reminders: ${enableMaintenanceReminders ? '✅ Enabled' : '❌ Disabled'}`);
+
 	return {
 		port,
 		mongoString,
@@ -46,6 +81,14 @@ function validateConfig(): Config {
 		logLevel,
 		rdwApiKey,
 		rdwBaseUrl,
+		enableDocumentExpiryCheck,
+		enableQuoteExpiryCheck,
+		enableInvoiceExpiryCheck,
+		enablePurchaseInvoiceExpiryCheck,
+		enableRdwFullSync,
+		enableRdwDailySync,
+		enableApkStatusCheck,
+		enableMaintenanceReminders,
 	};
 }
 
@@ -53,4 +96,19 @@ function validateConfig(): Config {
 export const config = validateConfig();
 
 // Export individual config values for convenience
-export const { port, mongoString, nodeEnv, logLevel, rdwApiKey, rdwBaseUrl } = config;
+export const {
+	port,
+	mongoString,
+	nodeEnv,
+	logLevel,
+	rdwApiKey,
+	rdwBaseUrl,
+	enableDocumentExpiryCheck,
+	enableQuoteExpiryCheck,
+	enableInvoiceExpiryCheck,
+	enablePurchaseInvoiceExpiryCheck,
+	enableRdwFullSync,
+	enableRdwDailySync,
+	enableApkStatusCheck,
+	enableMaintenanceReminders
+} = config;

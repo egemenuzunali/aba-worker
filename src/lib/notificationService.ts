@@ -1,6 +1,3 @@
-// TODO: Import when Notification model is created
-// import { models } from '../models';
-
 interface CreateNotificationParams {
 	companyId: string;
 	userId?: string;
@@ -23,9 +20,23 @@ interface CreateNotificationParams {
 export class NotificationService {
 	static async createNotification(params: CreateNotificationParams) {
 		try {
-			// TODO: Implement when Notification model is created
-			console.log(`📢 Creating notification: ${params.title} - ${params.message}`);
-			return { _id: 'mock-notification-id', ...params };
+			// Dynamically import db to avoid circular dependencies
+			const db = await import('./db');
+
+			// Create notification in database
+			const notification = await db.default.models.Notification.create({
+				companyId: params.companyId,
+				userId: params.userId,
+				title: params.title,
+				message: params.message,
+				type: params.type,
+				isRead: false,
+				metadata: params.metadata,
+			});
+
+			console.log(`📢 Notification created: ${notification._id} - ${params.title}`);
+
+			return notification;
 		} catch (error) {
 			console.error('Failed to create notification:', error);
 			throw error;

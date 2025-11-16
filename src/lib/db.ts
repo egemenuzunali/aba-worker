@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { Vehicle, Company, Client, System, Quote, Invoice, PurchaseInvoice } from '../models'
+import { Vehicle, Company, Client, System, Quote, Invoice, PurchaseInvoice, Notification } from '../models'
 import { mongoString } from './config'
 
 
@@ -11,6 +11,7 @@ interface Models {
 	Quote: typeof Quote;
 	Invoice: typeof Invoice;
 	PurchaseInvoice: typeof PurchaseInvoice;
+	Notification: typeof Notification;
 }
 
 class db {
@@ -29,7 +30,13 @@ class db {
 		System,
 		Quote,
 		Invoice,
-		PurchaseInvoice
+		PurchaseInvoice,
+		Notification
+	}
+
+	static async disconnect(): Promise<void> {
+		await mongoose.disconnect();
+		console.info('DB Connection closed 👋')
 	}
 }
 

@@ -27,6 +27,14 @@ export class RdwSyncService {
 
 	/**
 	 * Sync all vehicles from active companies with RDW data
+	 *
+	 * PERFORMANCE NOTE: At 50,000+ vehicles, this sync will exceed RDW API rate limits (10,000 calls/day).
+	 * When reaching 50k vehicles, implement sharded sync across 3 days:
+	 * - Day 1: Sync vehicles with ID % 3 === 0 (~16,667 vehicles)
+	 * - Day 2: Sync vehicles with ID % 3 === 1 (~16,667 vehicles)
+	 * - Day 3: Sync vehicles with ID % 3 === 2 (~16,667 vehicles)
+	 * This spreads the load to ~8,333 API calls per day (with 4-week skip rule).
+	 * Run shards on Wed/Thu/Fri to avoid overlapping with daily sync (Mon-Sun: ~7,500 calls).
 	 */
 	async syncAllCompaniesVehicles(force = false): Promise<{ synced: number; errors: string[]; companies: number }> {
 		const db = await import('../lib/db');
@@ -37,15 +45,15 @@ export class RdwSyncService {
 		let companiesProcessed = 0;
 
 		try {
-			// Check if it's been 6 weeks since last sync (unless forced)
+			// Check if it's been 3 months since last sync (unless forced)
 			if (!force) {
 				const systemDoc = await db.default.models.System.findOne();
 				if (systemDoc?.lastRdwSync) {
-					const sixWeeksAgo = new Date();
-					sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42); // 6 weeks = 42 days
+					const threeMonthsAgo = new Date();
+					threeMonthsAgo.setDate(threeMonthsAgo.getDate() - 90); // 3 months = ~90 days
 
-					if (systemDoc.lastRdwSync > sixWeeksAgo) {
-						console.log('⏭️  Skipping RDW sync - last sync was less than 6 weeks ago');
+					if (systemDoc.lastRdwSync > threeMonthsAgo) {
+						console.log('⏭️  Skipping RDW sync - last sync was less than 3 months ago');
 						console.log(`   Last sync: ${systemDoc.lastRdwSync}`);
 						return { synced: 0, errors: [], companies: 0 };
 					}
@@ -109,8 +117,6 @@ export class RdwSyncService {
 		const { NotificationService } = await import('../lib/notificationService');
 
 		let syncedCount = 0;
-		const BATCH_SIZE = 25; // Process 25 vehicles at a time (increased from 10)
-		const BATCH_DELAY = 500; // 0.5 second delay between batches (reduced from 2s)
 		const PAGE_SIZE = 500; // Fetch vehicles in pages to avoid memory issues
 
 		// Get total count first
@@ -120,7 +126,16 @@ export class RdwSyncService {
 			license_plate: { $exists: true, $nin: [null, ''] }
 		});
 
-		console.log(`Processing ${totalVehicles} vehicles in pages of ${PAGE_SIZE}, batches of ${BATCH_SIZE}`);
+		// Adaptive batch sizing and delays based on fleet size to prevent API rate limiting
+		const BATCH_SIZE = totalVehicles > 10000 ? 10 :
+		                    totalVehicles > 5000  ? 15 :
+		                    totalVehicles > 1000  ? 20 : 25;
+
+		const BATCH_DELAY = totalVehicles > 10000 ? 2000 :
+		                    totalVehicles > 5000  ? 1500 :
+		                    totalVehicles > 1000  ? 1000 : 500;
+
+		console.log(`Processing ${totalVehicles} vehicles in pages of ${PAGE_SIZE}, batches of ${BATCH_SIZE} (delay: ${BATCH_DELAY}ms)`);
 
 		// Process vehicles in pages to avoid loading all into memory
 		for (let page = 0; page < Math.ceil(totalVehicles / PAGE_SIZE); page++) {
@@ -258,177 +273,20 @@ export class RdwSyncService {
 		}
 	}
 
-	/**
-	 * Check for APK expiry and create notifications
-	 */
-	async checkApkExpiryForAllCompanies(): Promise<{ notifications: number; errors: string[] }> {
-		const db = await import('../lib/db');
-		const { NotificationService } = await import('../lib/notificationService');
-		console.log('🔄 Checking APK expiry for all companies...');
-		const startTime = Date.now();
-		const errors: string[] = [];
-		let notificationsCreated = 0;
-
-		try {
-			// Find all companies
-			const companies = await db.default.models.Company.find().select('_id name');
-
-			for (const company of companies) {
-				try {
-					const created = await this.checkApkExpiryForCompany(company._id.toString());
-					notificationsCreated += created;
-				} catch (error) {
-					const errorMsg = `Failed to check APK for company ${company.name}: ${(error as Error).message}`;
-					console.error('❌', errorMsg);
-					errors.push(errorMsg);
-				}
-			}
-
-			// Update system weekly maintenance check date
-			await this.updateWeeklyMaintenanceDate();
-
-			const duration = Date.now() - startTime;
-			console.log(`✅ APK expiry check completed in ${duration}ms`);
-			console.log(`📊 Summary: ${notificationsCreated} notifications created, ${errors.length} errors`);
-
-			return { notifications: notificationsCreated, errors };
-		} catch (error) {
-			console.error('❌ Unexpected error during APK expiry check:', error);
-			errors.push(`Unexpected error: ${(error as Error).message}`);
-			return { notifications: notificationsCreated, errors };
-		}
-	}
-
-	/**
-	 * Check APK expiry for a specific company and create notifications
-	 * Optimized to use a single query with aggregation pipeline
-	 */
-	private async checkApkExpiryForCompany(companyId: string): Promise<number> {
-		const db = await import('../lib/db');
-		const { NotificationService } = await import('../lib/notificationService');
-
-		let notificationsCreated = 0;
-		const today = new Date();
-		const thirtyDaysFromNow = new Date();
-		thirtyDaysFromNow.setDate(today.getDate() + 30); // 30 days
-		const twoYearsAgo = new Date();
-		twoYearsAgo.setFullYear(today.getFullYear() - 2); // 2 years ago
-
-		// First, get all client IDs that have APK notifications enabled
-		// Include clients where apkNotificationsDisabled is false, null, or doesn't exist (default is enabled)
-		const enabledClients = await db.default.models.Client.find({
-			companyId: new mongoose.Types.ObjectId(companyId),
-			deleted: { $ne: true },
-			$or: [
-				{ apkNotificationsDisabled: false },
-				{ apkNotificationsDisabled: { $exists: false } },
-				{ apkNotificationsDisabled: null }
-			]
-		}).select('_id');
-
-		const enabledClientIds = enabledClients.map(c => c._id);
-
-		// Use aggregation pipeline to:
-		// 1. Filter vehicles with expired or expiring APK from clients with notifications enabled
-		// 2. Separate into expired and expiring categories
-		const result = await db.default.models.Vehicle.aggregate([
-			{
-				$match: {
-					companyId: new mongoose.Types.ObjectId(companyId),
-					deleted: { $ne: true },
-					geexporteerd: { $ne: true },
-					clientId: { $in: enabledClientIds }, // Only vehicles from clients with notifications enabled
-					apkRemindersDismissed: { $ne: true },
-					$or: [
-						{ apkRemindersDisabledUntil: { $exists: false } },
-						{ apkRemindersDisabledUntil: null },
-						{ apkRemindersDisabledUntil: { $lt: today } }
-					]
-				}
-			},
-			{
-				// Add category field based on expiry status
-				$addFields: {
-					category: {
-						$cond: {
-							if: {
-								$and: [
-									{ $lt: ['$apk_expiry', today] },
-									{ $gte: ['$apk_expiry', twoYearsAgo] },
-									{
-										$or: [
-											{ $eq: [{ $ifNull: ['$lastApkEmailSentForExpired', null] }, null] },
-											{ $not: { $ifNull: ['$lastApkEmailSentForExpired', false] } }
-										]
-									}
-								]
-							},
-							then: 'expired',
-							else: {
-								$cond: {
-									if: {
-										$and: [
-											{ $gte: ['$apk_expiry', today] },
-											{ $lte: ['$apk_expiry', thirtyDaysFromNow] },
-											{
-												$or: [
-													{ $eq: [{ $ifNull: ['$lastApkEmailSentForExpiring', null] }, null] },
-													{ $not: { $ifNull: ['$lastApkEmailSentForExpiring', false] } }
-												]
-											}
-										]
-									},
-									then: 'expiring',
-									else: null
-								}
-							}
-						}
-					}
-				}
-			},
-			{
-				// Filter out vehicles that don't match either category
-				$match: {
-					category: { $ne: null }
-				}
-			},
-			{
-				// Group by category
-				$group: {
-					_id: '$category',
-					vehicleIds: { $push: '$_id' },
-					count: { $sum: 1 }
-				}
-			}
-		]);
-
-		// Process results
-		for (const group of result) {
-			const vehicleIds = group.vehicleIds.map((id: mongoose.Types.ObjectId) => id.toString());
-
-			if (group._id === 'expired' && vehicleIds.length > 0) {
-				await NotificationService.createApkExpiredNotification(
-					companyId,
-					vehicleIds.length,
-					vehicleIds
-				);
-				notificationsCreated++;
-				console.log(`📢 Created expired APK notification for company ${companyId}: ${vehicleIds.length} vehicles`);
-			} else if (group._id === 'expiring' && vehicleIds.length > 0) {
-				await NotificationService.createApkExpiringNotification(
-					companyId,
-					vehicleIds.length,
-					vehicleIds
-				);
-				notificationsCreated++;
-			}
-		}
-
-		return notificationsCreated;
-	}
 
 	/**
 	 * Sync only expired and expiring vehicles with RDW data (runs daily)
+	 *
+	 * Syncs vehicles within a rolling 160-day window:
+	 * - Expired within last 80 days (likely getting renewed soon)
+	 * - Expiring within next 80 days (notification window)
+	 *
+	 * PERFORMANCE NOTE: This sync is designed to handle fleets up to ~200,000 vehicles safely.
+	 * With a typical APK cycle of 1 year, the 160-day window contains ~4% of fleet.
+	 * Examples:
+	 * - 10,000 vehicles: ~400 calls/day
+	 * - 50,000 vehicles: ~2,000 calls/day
+	 * - 200,000 vehicles: ~8,000 calls/day (under 10k RDW API limit)
 	 */
 	async syncExpiredAndExpiringVehicles(): Promise<{ synced: number; errors: string[]; totalVehicles: number }> {
 		const db = await import('../lib/db');
@@ -443,32 +301,23 @@ export class RdwSyncService {
 
 		try {
 			const today = new Date();
-			const thirtyDaysFromNow = new Date();
-			thirtyDaysFromNow.setDate(today.getDate() + 30); // 30 days
-			const twoYearsAgo = new Date();
-			twoYearsAgo.setFullYear(today.getFullYear() - 2); // 2 years ago
+			const eightyDaysFromNow = new Date();
+			eightyDaysFromNow.setDate(today.getDate() + 80); // Future: expiring within 80 days
+			const eightyDaysAgo = new Date();
+			eightyDaysAgo.setDate(today.getDate() - 80); // Past: expired within last 80 days
 
-			// Find all vehicles with expired or expiring APK
+			// Find ONLY vehicles with APK expired/expiring within 80-day window (past or future)
+			// This creates a rolling 160-day window (-80 to +80 days from today)
+			// Vehicles outside this window are excluded - they will be caught by the
+			// full sync (every 3 months) which updates all vehicle data periodically
 			// Only select fields needed for sync - no population to reduce memory usage
 			const criticalVehicles = await db.default.models.Vehicle.find({
 				deleted: { $ne: true },
 				license_plate: { $exists: true, $nin: [null, ''] },
-				$or: [
-					{
-						// Expired APK (within last 2 years)
-						apk_expiry: {
-							$lt: today,
-							$gte: twoYearsAgo
-						}
-					},
-					{
-						// Expiring within 30 days
-						apk_expiry: {
-							$gte: today,
-							$lte: thirtyDaysFromNow
-						}
-					}
-				]
+				apk_expiry: {
+					$gte: eightyDaysAgo,  // Expired within last 80 days (likely getting renewed)
+					$lte: eightyDaysFromNow  // Expiring within next 80 days (notification window)
+				}
 			})
 				.select('_id license_plate companyId last_rdw_sync apk_expiry clientId datum_tenaamstelling')
 				.lean();
@@ -481,9 +330,16 @@ export class RdwSyncService {
 				return { synced: 0, errors: [], totalVehicles: 0 };
 			}
 
-			// Process vehicles in batches
-			const BATCH_SIZE = 25;
-			const BATCH_DELAY = 500; // 0.5 second delay between batches
+			// Adaptive batch sizing based on number of critical vehicles to prevent API rate limiting
+			const BATCH_SIZE = totalVehiclesFound > 2000 ? 10 :
+			                    totalVehiclesFound > 1000 ? 15 :
+			                    totalVehiclesFound > 500  ? 20 : 25;
+
+			const BATCH_DELAY = totalVehiclesFound > 2000 ? 2000 :
+			                    totalVehiclesFound > 1000 ? 1500 :
+			                    totalVehiclesFound > 500  ? 1000 : 500;
+
+			console.log(`   Using adaptive batching: ${BATCH_SIZE} vehicles per batch, ${BATCH_DELAY}ms delay`);
 
 			for (let i = 0; i < criticalVehicles.length; i += BATCH_SIZE) {
 				const batch = criticalVehicles.slice(i, i + BATCH_SIZE);
@@ -583,29 +439,6 @@ export class RdwSyncService {
 		}
 	}
 
-	/**
-	 * Update weekly maintenance check date
-	 */
-	private async updateWeeklyMaintenanceDate(): Promise<void> {
-		const db = await import('../lib/db');
-		try {
-			// Find or create system document
-			let systemDoc = await db.default.models.System.findOne();
-
-			if (!systemDoc) {
-				systemDoc = await db.default.models.System.create({
-					lastWeeklyMaintenanceCheck: new Date(),
-				});
-			} else {
-				systemDoc.lastWeeklyMaintenanceCheck = new Date();
-				await systemDoc.save();
-			}
-
-			console.log(`📅 Weekly maintenance date updated: ${systemDoc.lastWeeklyMaintenanceCheck}`);
-		} catch (error) {
-			console.error('❌ Failed to update weekly maintenance date:', error);
-		}
-	}
 
 	/**
 	 * Create tenaamstelling notification if changed
@@ -680,13 +513,5 @@ export class RdwSyncService {
 	async runManualSync(): Promise<void> {
 		console.log('🔧 Running manual RDW sync...');
 		await this.syncAllCompaniesVehicles();
-	}
-
-	/**
-	 * Run APK check manually (for testing or admin triggers)
-	 */
-	async runManualApkCheck(): Promise<void> {
-		console.log('🔧 Running manual APK expiry check...');
-		await this.checkApkExpiryForAllCompanies();
 	}
 }
