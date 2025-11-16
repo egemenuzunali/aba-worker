@@ -122,20 +122,34 @@ export class MaintenanceReminderService {
 									vehicleIds
 								);
 
-								// Update lastNotified for these reminders
-								for (const vehicle of overdueVehicles) {
-									const reminders = vehicle.maintenanceReminders || [];
-									let updated = false;
-									for (const reminder of reminders) {
-										if (!reminder.completed && !reminder.dismissed && reminder.dueDate && reminder.dueDate < today) {
-											reminder.lastNotified = new Date();
-											updated = true;
+								// Bulk update lastNotified for overdue reminders (much more efficient)
+								const now = new Date();
+								await db.default.models.Vehicle.updateMany(
+									{
+										_id: { $in: overdueVehicles.map(v => v._id) },
+										'maintenanceReminders': {
+											$elemMatch: {
+												completed: false,
+												dismissed: false,
+												dueDate: { $lt: today, $ne: null, $exists: true }
+											}
 										}
+									},
+									{
+										$set: {
+											'maintenanceReminders.$[elem].lastNotified': now
+										}
+									},
+									{
+										arrayFilters: [
+											{
+												'elem.completed': false,
+												'elem.dismissed': false,
+												'elem.dueDate': { $lt: today, $ne: null, $exists: true }
+											}
+										]
 									}
-									if (updated) {
-										await vehicle.save();
-									}
-								}
+								);
 
 								notificationCount++;
 								console.log(`⚠️  ${company.name}: ${overdueVehicles.length} vehicles with overdue maintenance`);
@@ -150,20 +164,39 @@ export class MaintenanceReminderService {
 									vehicleIds
 								);
 
-								// Update lastNotified for these reminders
-								for (const vehicle of dueSoonVehicles) {
-									const reminders = vehicle.maintenanceReminders || [];
-									let updated = false;
-									for (const reminder of reminders) {
-										if (!reminder.completed && !reminder.dismissed && reminder.dueDate && reminder.dueDate >= today && reminder.dueDate <= fourteenDaysFromNow) {
-											reminder.lastNotified = new Date();
-											updated = true;
+								// Bulk update lastNotified for due soon reminders (much more efficient)
+								const now = new Date();
+								await db.default.models.Vehicle.updateMany(
+									{
+										_id: { $in: dueSoonVehicles.map(v => v._id) },
+										'maintenanceReminders': {
+											$elemMatch: {
+												completed: false,
+												dismissed: false,
+												dueDate: {
+													$gte: today,
+													$lte: fourteenDaysFromNow,
+													$ne: null,
+													$exists: true
+												}
+											}
 										}
+									},
+									{
+										$set: {
+											'maintenanceReminders.$[elem].lastNotified': now
+										}
+									},
+									{
+										arrayFilters: [
+											{
+												'elem.completed': false,
+												'elem.dismissed': false,
+												'elem.dueDate': { $gte: today, $lte: fourteenDaysFromNow, $ne: null, $exists: true }
+											}
+										]
 									}
-									if (updated) {
-										await vehicle.save();
-									}
-								}
+								);
 
 								notificationCount++;
 								console.log(`📅 ${company.name}: ${dueSoonVehicles.length} vehicles with upcoming maintenance`);
@@ -217,38 +250,74 @@ export class MaintenanceReminderService {
 		const today = new Date();
 		const fourteenDaysFromNow = new Date();
 		fourteenDaysFromNow.setDate(today.getDate() + 14);
+		const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
 		let notificationCount = 0;
 
-		// Find vehicles with overdue maintenance
+		// Find vehicles with overdue maintenance (not notified or notified > 7 days ago)
 		const overdueVehicles = await db.default.models.Vehicle.find({
 			companyId,
 			deleted: { $ne: true },
-			maintenanceReminders: {
-				$elemMatch: {
-					completed: false,
-					dismissed: false,
-					dueDate: { $lt: today, $ne: null, $exists: true }
+			$or: [
+				{
+					maintenanceReminders: {
+						$elemMatch: {
+							completed: false,
+							dismissed: false,
+							dueDate: { $lt: today, $ne: null, $exists: true },
+							lastNotified: { $exists: false }
+						}
+					}
+				},
+				{
+					maintenanceReminders: {
+						$elemMatch: {
+							completed: false,
+							dismissed: false,
+							dueDate: { $lt: today, $ne: null, $exists: true },
+							lastNotified: { $lt: sevenDaysAgo }
+						}
+					}
 				}
-			}
+			]
 		}).limit(50);
 
-		// Find vehicles with maintenance due soon
+		// Find vehicles with maintenance due soon (not notified or notified > 7 days ago)
 		const dueSoonVehicles = await db.default.models.Vehicle.find({
 			companyId,
 			deleted: { $ne: true },
-			maintenanceReminders: {
-				$elemMatch: {
-					completed: false,
-					dismissed: false,
-					dueDate: {
-						$gte: today,
-						$lte: fourteenDaysFromNow,
-						$ne: null,
-						$exists: true
+			$or: [
+				{
+					maintenanceReminders: {
+						$elemMatch: {
+							completed: false,
+							dismissed: false,
+							dueDate: {
+								$gte: today,
+								$lte: fourteenDaysFromNow,
+								$ne: null,
+								$exists: true
+							},
+							lastNotified: { $exists: false }
+						}
+					}
+				},
+				{
+					maintenanceReminders: {
+						$elemMatch: {
+							completed: false,
+							dismissed: false,
+							dueDate: {
+								$gte: today,
+								$lte: fourteenDaysFromNow,
+								$ne: null,
+								$exists: true
+							},
+							lastNotified: { $lt: sevenDaysAgo }
+						}
 					}
 				}
-			}
+			]
 		}).limit(50);
 
 		// Create notification for overdue maintenance
@@ -259,6 +328,36 @@ export class MaintenanceReminderService {
 				overdueVehicles.length,
 				vehicleIds
 			);
+
+			// Bulk update lastNotified for overdue reminders
+			const now = new Date();
+			await db.default.models.Vehicle.updateMany(
+				{
+					_id: { $in: overdueVehicles.map(v => v._id) },
+					'maintenanceReminders': {
+						$elemMatch: {
+							completed: false,
+							dismissed: false,
+							dueDate: { $lt: today, $ne: null, $exists: true }
+						}
+					}
+				},
+				{
+					$set: {
+						'maintenanceReminders.$[elem].lastNotified': now
+					}
+				},
+				{
+					arrayFilters: [
+						{
+							'elem.completed': false,
+							'elem.dismissed': false,
+							'elem.dueDate': { $lt: today, $ne: null, $exists: true }
+						}
+					]
+				}
+			);
+
 			notificationCount++;
 		}
 
@@ -270,6 +369,41 @@ export class MaintenanceReminderService {
 				dueSoonVehicles.length,
 				vehicleIds
 			);
+
+			// Bulk update lastNotified for due soon reminders
+			const now = new Date();
+			await db.default.models.Vehicle.updateMany(
+				{
+					_id: { $in: dueSoonVehicles.map(v => v._id) },
+					'maintenanceReminders': {
+						$elemMatch: {
+							completed: false,
+							dismissed: false,
+							dueDate: {
+								$gte: today,
+								$lte: fourteenDaysFromNow,
+								$ne: null,
+								$exists: true
+							}
+						}
+					}
+				},
+				{
+					$set: {
+						'maintenanceReminders.$[elem].lastNotified': now
+					}
+				},
+				{
+					arrayFilters: [
+						{
+							'elem.completed': false,
+							'elem.dismissed': false,
+							'elem.dueDate': { $gte: today, $lte: fourteenDaysFromNow, $ne: null, $exists: true }
+						}
+					]
+				}
+			);
+
 			notificationCount++;
 		}
 

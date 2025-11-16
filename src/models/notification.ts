@@ -1,10 +1,10 @@
 import { Schema, model, Types } from 'mongoose';
 
-// Partial schema for aba-worker - matches back-end schema for notification creation
+// Partial schema for aba-worker - matches back-end schema exactly
 interface Notification {
 	_id: Types.ObjectId;
-	companyId: string;
-	userId?: string;
+	companyId: Types.ObjectId;
+	userId?: Types.ObjectId;
 	title: string;
 	message: string;
 	type: 'quote_confirmed' | 'quote_declined' | 'invoice_paid' | 'payment_received' |
@@ -21,6 +21,7 @@ interface Notification {
 		vehicleCount?: number;
 		amount?: number;
 		paymentId?: string;
+		reminderId?: string;
 	};
 	createdAt: Date;
 	updatedAt: Date;
@@ -29,22 +30,26 @@ interface Notification {
 const notificationSchema = new Schema<Notification>(
 	{
 		companyId: {
-			type: String,
+			type: Schema.Types.ObjectId,
+			ref: 'Company',
 			required: true,
 			index: true,
 		},
 		userId: {
-			type: String,
+			type: Schema.Types.ObjectId,
+			ref: 'User',
 			required: false,
 			index: true,
 		},
 		title: {
 			type: String,
 			required: true,
+			maxlength: 200,
 		},
 		message: {
 			type: String,
 			required: true,
+			maxlength: 500,
 		},
 		type: {
 			type: String,
@@ -75,10 +80,11 @@ const notificationSchema = new Schema<Notification>(
 			quoteId: { type: String, required: false },
 			clientId: { type: String, required: false },
 			vehicleId: { type: String, required: false },
-			vehicleIds: { type: [String], required: false },
-			vehicleCount: { type: Number, required: false },
 			amount: { type: Number, required: false },
 			paymentId: { type: String, required: false },
+			vehicleIds: { type: [String], required: false },
+			vehicleCount: { type: Number, required: false },
+			reminderId: { type: String, required: false },
 		},
 	},
 	{

@@ -3,6 +3,7 @@
 
 import { StatusUpdateScheduler } from '../services/StatusUpdateScheduler';
 import { RdwSyncService } from '../services/RdwSyncService';
+import { ApkStatusService } from '../services/ApkStatusService';
 import { MaintenanceReminderService } from '../services/MaintenanceReminderService';
 import db from './db';
 
@@ -11,7 +12,8 @@ import db from './db';
  * Each service can be enabled/disabled independently via environment variables
  *
  * Environment Variables:
- * - TEST_SYNC_STATUS_UPDATE=true: Enable status update scheduler test
+ * - TEST_SYNC_STATUS_UPDATE=true: Enable document expiry check test
+ * - TEST_SYNC_APK_STATUS=true: Enable APK status check test (notifications only, no RDW sync)
  * - TEST_SYNC_MAINTENANCE=true: Enable maintenance reminder test
  * - TEST_SYNC_RDW=true: Enable RDW sync test
  * - TEST_SYNC_COMPANY_ID=<company_id>: Specify company ID for testing (optional)
@@ -19,6 +21,7 @@ import db from './db';
 export async function runTestSync(): Promise<void> {
 	const testFlags = {
 		statusUpdate: process.env.TEST_SYNC_STATUS_UPDATE === 'true',
+		apkStatus: process.env.TEST_SYNC_APK_STATUS === 'true',
 		maintenance: process.env.TEST_SYNC_MAINTENANCE === 'true',
 		rdw: process.env.TEST_SYNC_RDW === 'true',
 	};
@@ -40,23 +43,33 @@ export async function runTestSync(): Promise<void> {
 	}
 
 	console.log('🧪 Starting selective test syncs...');
-	console.log(`   Status Update: ${testFlags.statusUpdate ? '✅' : '❌'}`);
+	console.log(`   Document Expiry Check: ${testFlags.statusUpdate ? '✅' : '❌'}`);
+	console.log(`   APK Status Check: ${testFlags.apkStatus ? '✅' : '❌'}`);
 	console.log(`   Maintenance: ${testFlags.maintenance ? '✅' : '❌'}`);
 	console.log(`   RDW Sync: ${testFlags.rdw ? '✅' : '❌'}`);
 
 	try {
 		let completedTests = 0;
 
-		// Test 1: Status Update Scheduler - Run a small manual update check
+		// Test 1: Document Expiry Check - Run a manual document expiry update
 		if (testFlags.statusUpdate) {
-			console.log('📅 Testing StatusUpdateScheduler...');
+			console.log('📅 Testing Document Expiry Check (StatusUpdateScheduler)...');
 			const scheduler = StatusUpdateScheduler.getInstance();
 			await scheduler.runManualUpdate();
-			console.log('✅ StatusUpdateScheduler test completed');
+			console.log('✅ Document expiry check test completed');
 			completedTests++;
 		}
 
-		// Test 2: Maintenance Reminder Service - Check for one company (limited test)
+		// Test 2: APK Status Check - Check APK expiry status and create notifications (no RDW sync)
+		if (testFlags.apkStatus) {
+			console.log('🚗 Testing APK Status Check (ApkStatusService)...');
+			const apkStatusService = ApkStatusService.getInstance();
+			await apkStatusService.checkApkExpiryForAllCompanies();
+			console.log('✅ APK status check test completed');
+			completedTests++;
+		}
+
+		// Test 3: Maintenance Reminder Service - Check for one company (limited test)
 		if (testFlags.maintenance) {
 			console.log('🔧 Testing MaintenanceReminderService...');
 			const maintenanceService = MaintenanceReminderService.getInstance();
@@ -108,7 +121,7 @@ export async function runTestSync(): Promise<void> {
 			}
 		}
 
-		// Test 3: RDW Sync Service - Test with one company (limited test)
+		// Test 4: RDW Sync Service - Test with one company (limited test)
 		if (testFlags.rdw) {
 			console.log('🚗 Testing RdwSyncService...');
 			const rdwService = RdwSyncService.getInstance();

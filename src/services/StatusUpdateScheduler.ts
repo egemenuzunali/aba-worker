@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { RdwSyncService } from './RdwSyncService';
+import { ApkStatusService } from './ApkStatusService';
 import { MaintenanceReminderService } from './MaintenanceReminderService';
 
 export class StatusUpdateScheduler {
@@ -316,24 +317,45 @@ export class StatusUpdateScheduler {
 	}
 
 	/**
-	 * Runs expiry checks for all document types
+	 * Runs expiry checks for all document types (based on configuration)
 	 */
 	private async runExpiryCheck(): Promise<void> {
+		const { config } = require('../lib/config');
 		console.log('🚀 Starting scheduled expiry check...');
 		const startTime = Date.now();
 
 		try {
-			const results = await Promise.allSettled([
-				this.updateExpiredQuotes(),
-				this.updateExpiredInvoices(),
-				this.updateExpiredPurchaseInvoices()
-			]);
+			const tasks = [];
+			const types: string[] = [];
+
+			// Only run checks that are enabled
+			if (config.enableQuoteExpiryCheck) {
+				tasks.push(this.updateExpiredQuotes());
+				types.push('quotes');
+			}
+			if (config.enableInvoiceExpiryCheck) {
+				tasks.push(this.updateExpiredInvoices());
+				types.push('invoices');
+			}
+			if (config.enablePurchaseInvoiceExpiryCheck) {
+				tasks.push(this.updateExpiredPurchaseInvoices());
+				types.push('purchase invoices');
+			}
+
+			if (tasks.length === 0) {
+				console.log('⏭️  All document expiry checks disabled, skipping...');
+				return;
+			}
+
+			console.log(`📋 Running expiry checks for: ${types.join(', ')}`);
+
+			const results = await Promise.allSettled(tasks);
 
 			let totalExpired = 0;
 			const allErrors: string[] = [];
 
 			results.forEach((result, index) => {
-				const type = ['quotes', 'invoices', 'purchase invoices'][index];
+				const type = types[index];
 
 				if (result.status === 'fulfilled') {
 					totalExpired += result.value.updated;
@@ -384,26 +406,28 @@ export class StatusUpdateScheduler {
 	}
 
 	/**
-	 * Run weekly APK expiry check and create notifications
+	 * Run weekly APK status check and create notifications
+	 * This checks the current APK expiry status and creates notifications
+	 * Separate from RDW sync which fetches fresh data from the RDW API
 	 */
-	private async runApkExpiryCheck(): Promise<void> {
-		console.log('🔄 Starting scheduled APK expiry check...');
+	private async runApkStatusCheck(): Promise<void> {
+		console.log('🔄 Starting scheduled APK status check...');
 		const startTime = Date.now();
 
 		try {
-			const rdwService = RdwSyncService.getInstance();
-			const result = await rdwService.checkApkExpiryForAllCompanies();
+			const apkStatusService = ApkStatusService.getInstance();
+			const result = await apkStatusService.checkApkExpiryForAllCompanies();
 
 			const duration = Date.now() - startTime;
-			console.log(`✅ APK expiry check completed in ${duration}ms`);
+			console.log(`✅ APK status check completed in ${duration}ms`);
 			console.log(`📊 Summary: ${result.notifications} notifications created, ${result.errors.length} errors`);
 
 			if (result.errors.length > 0) {
-				console.error('⚠️  Errors occurred during APK expiry check:');
+				console.error('⚠️  Errors occurred during APK status check:');
 				result.errors.forEach((error: string) => console.error(`   - ${error}`));
 			}
 		} catch (error) {
-			console.error('❌ Unexpected error during APK expiry check:', error);
+			console.error('❌ Unexpected error during APK status check:', error);
 		}
 	}
 
@@ -456,75 +480,115 @@ export class StatusUpdateScheduler {
 	}
 
 	/**
-	 * Start all schedulers
+	 * Start all schedulers based on configuration
 	 */
 	public startScheduler(): void {
-		// Schedule daily at midnight for document expiry checks
-		const dailyJob = cron.schedule('0 0 * * *', () => {
-			this.runExpiryCheck();
-		}, {
-			scheduled: false,
-			timezone: 'Europe/Amsterdam'
-		});
+		const { config } = require('../lib/config');
 
-		this.jobs.set('daily-expiry-check', dailyJob);
-		dailyJob.start();
+		console.log('⏰ Starting schedulers based on configuration...');
+
+		// Schedule daily at midnight for document expiry checks
+		if (config.enableDocumentExpiryCheck) {
+			const dailyJob = cron.schedule('0 0 * * *', () => {
+				this.runExpiryCheck();
+			}, {
+				scheduled: false,
+				timezone: 'Europe/Amsterdam'
+			});
+
+			this.jobs.set('daily-expiry-check', dailyJob);
+			dailyJob.start();
+			console.log('✅ Document expiry check scheduler started');
+		} else {
+			console.log('⏭️  Document expiry check scheduler disabled');
+		}
 
 		// Schedule daily sync for expired/expiring vehicles (every day at 1:00 AM)
-		const dailyExpiredVehiclesSyncJob = cron.schedule('0 1 * * *', async () => {
-			// This runs every day at 1:00 AM
-			// Syncs only vehicles with expired or expiring APK
-			// Runs BEFORE the APK expiry check so notifications are based on fresh data
-			await this.runDailyExpiredVehiclesSync();
-		}, {
-			scheduled: false,
-			timezone: 'Europe/Amsterdam'
-		});
+		if (config.enableRdwDailySync) {
+			const dailyExpiredVehiclesSyncJob = cron.schedule('0 1 * * *', async () => {
+				// This runs every day at 1:00 AM
+				// Syncs only vehicles with expired or expiring APK
+				// Runs BEFORE the APK status check so notifications are based on fresh data
+				await this.runDailyExpiredVehiclesSync();
+			}, {
+				scheduled: false,
+				timezone: 'Europe/Amsterdam'
+			});
 
-		this.jobs.set('daily-expired-vehicles-sync', dailyExpiredVehiclesSyncJob);
-		dailyExpiredVehiclesSyncJob.start();
+			this.jobs.set('daily-expired-vehicles-sync', dailyExpiredVehiclesSyncJob);
+			dailyExpiredVehiclesSyncJob.start();
+			console.log('✅ RDW daily sync scheduler started');
+		} else {
+			console.log('⏭️  RDW daily sync scheduler disabled');
+		}
 
 		// Schedule RDW sync every 6 weeks (every Sunday at 2 AM)
-		const rdwSyncJob = cron.schedule('0 2 * * 0', async () => {
-			// This runs every Sunday at 2 AM
-			// We'll implement a check to ensure it only syncs every 6 weeks
-			await this.runRdwSync();
-		}, {
-			scheduled: false,
-			timezone: 'Europe/Amsterdam'
-		});
+		if (config.enableRdwFullSync) {
+			const rdwSyncJob = cron.schedule('0 2 * * 0', async () => {
+				// This runs every Sunday at 2 AM
+				// Checks internally if 6+ weeks have passed since last sync
+				await this.runRdwSync();
+			}, {
+				scheduled: false,
+				timezone: 'Europe/Amsterdam'
+			});
 
-		this.jobs.set('rdw-sync', rdwSyncJob);
-		rdwSyncJob.start();
+			this.jobs.set('rdw-sync', rdwSyncJob);
+			rdwSyncJob.start();
+			console.log('✅ RDW full sync (6-week) scheduler started');
+		} else {
+			console.log('⏭️  RDW full sync scheduler disabled');
+		}
 
-		// Schedule weekly APK expiry check (every Sunday at 1:30 AM)
-		const weeklyApkCheckJob = cron.schedule('30 1 * * 0', () => {
-			this.runApkExpiryCheck();
-		}, {
-			scheduled: false,
-			timezone: 'Europe/Amsterdam'
-		});
+		// Schedule weekly APK status check (every Sunday at 1:30 AM)
+		if (config.enableApkStatusCheck) {
+			const weeklyApkStatusCheckJob = cron.schedule('30 1 * * 0', () => {
+				this.runApkStatusCheck();
+			}, {
+				scheduled: false,
+				timezone: 'Europe/Amsterdam'
+			});
 
-		this.jobs.set('weekly-apk-check', weeklyApkCheckJob);
-		weeklyApkCheckJob.start();
+			this.jobs.set('weekly-apk-status-check', weeklyApkStatusCheckJob);
+			weeklyApkStatusCheckJob.start();
+			console.log('✅ APK status check scheduler started');
+		} else {
+			console.log('⏭️  APK status check scheduler disabled');
+		}
 
 		// Schedule weekly maintenance reminder check (every Sunday at 3:00 AM)
-		const weeklyMaintenanceCheckJob = cron.schedule('0 3 * * 0', () => {
-			this.runMaintenanceReminderCheck();
-		}, {
-			scheduled: false,
-			timezone: 'Europe/Amsterdam'
-		});
+		if (config.enableMaintenanceReminders) {
+			const weeklyMaintenanceCheckJob = cron.schedule('0 3 * * 0', () => {
+				this.runMaintenanceReminderCheck();
+			}, {
+				scheduled: false,
+				timezone: 'Europe/Amsterdam'
+			});
 
-		this.jobs.set('weekly-maintenance-check', weeklyMaintenanceCheckJob);
-		weeklyMaintenanceCheckJob.start();
+			this.jobs.set('weekly-maintenance-check', weeklyMaintenanceCheckJob);
+			weeklyMaintenanceCheckJob.start();
+			console.log('✅ Maintenance reminder scheduler started');
+		} else {
+			console.log('⏭️  Maintenance reminder scheduler disabled');
+		}
 
-		console.log('⏰ All schedulers started (chronological order):');
-		console.log('   12:00 AM - Daily       - Document expiry check (quotes, invoices, purchase invoices)');
-		console.log('   1:00 AM  - Daily       - Expired/expiring vehicles RDW sync');
-		console.log('   1:30 AM  - Weekly      - APK notification check (uses fresh data from 1:00 AM sync)');
-		console.log('   2:00 AM  - Every 6wks  - Full RDW vehicle sync (only if 6+ weeks since last sync)');
-		console.log('   3:00 AM  - Weekly      - Maintenance reminder check');
+		console.log('\n⏰ Active schedulers summary (chronological order):');
+		if (config.enableDocumentExpiryCheck) {
+			console.log('   12:00 AM - Daily       - Document expiry check (quotes, invoices, purchase invoices)');
+		}
+		if (config.enableRdwDailySync) {
+			console.log('   1:00 AM  - Daily       - Expired/expiring vehicles RDW sync (fetches fresh APK data from RDW API)');
+		}
+		if (config.enableApkStatusCheck) {
+			console.log('   1:30 AM  - Weekly      - APK status check (creates notifications based on current APK status)');
+		}
+		if (config.enableRdwFullSync) {
+			console.log('   2:00 AM  - Every 6wks  - Full RDW vehicle sync (only if 6+ weeks since last sync)');
+		}
+		if (config.enableMaintenanceReminders) {
+			console.log('   3:00 AM  - Weekly      - Maintenance reminder check');
+		}
+		console.log('');
 	}
 
 	/**
@@ -555,11 +619,11 @@ export class StatusUpdateScheduler {
 	}
 
 	/**
-	 * Run APK expiry check manually (for testing or admin triggers)
+	 * Run APK status check manually (for testing or admin triggers)
 	 */
-	public async runManualApkCheck(): Promise<void> {
-		console.log('🔧 Running manual APK expiry check...');
-		await this.runApkExpiryCheck();
+	public async runManualApkStatusCheck(): Promise<void> {
+		console.log('🔧 Running manual APK status check...');
+		await this.runApkStatusCheck();
 	}
 
 	/**
