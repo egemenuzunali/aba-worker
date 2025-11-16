@@ -97,7 +97,7 @@ async function testNotifications() {
 		const totalCount = await db.models.Notification.countDocuments({ companyId: testCompany._id });
 		const unreadCount = await db.models.Notification.countDocuments({
 			companyId: testCompany._id,
-			read: false
+			isRead: false
 		});
 		console.log(`   Total notifications: ${totalCount}`);
 		console.log(`   Unread: ${unreadCount}`);

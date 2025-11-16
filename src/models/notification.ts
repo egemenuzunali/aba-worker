@@ -1,18 +1,17 @@
 import { Schema, model, Types } from 'mongoose';
 
-// Partial schema for aba-worker - only includes fields needed for notification creation
+// Partial schema for aba-worker - matches back-end schema for notification creation
 interface Notification {
 	_id: Types.ObjectId;
-	companyId: Types.ObjectId;
-	userId?: Types.ObjectId;
+	companyId: string;
+	userId?: string;
 	title: string;
 	message: string;
 	type: 'quote_confirmed' | 'quote_declined' | 'invoice_paid' | 'payment_received' |
 	      'quote_expired' | 'invoice_expired' | 'apk_expired' | 'apk_expiring' |
 	      'tenaamstelling_changed' | 'maintenance_due' | 'maintenance_overdue' |
 	      'system' | 'info';
-	read: boolean;
-	dismissed: boolean;
+	isRead: boolean;
 	metadata?: {
 		invoiceId?: string;
 		quoteId?: string;
@@ -22,24 +21,22 @@ interface Notification {
 		vehicleCount?: number;
 		amount?: number;
 		paymentId?: string;
-		reminderId?: string;
 	};
 	createdAt: Date;
 	updatedAt: Date;
-	readAt?: Date;
 }
 
 const notificationSchema = new Schema<Notification>(
 	{
 		companyId: {
-			type: Schema.Types.ObjectId,
-			ref: 'Company',
+			type: String,
 			required: true,
+			index: true,
 		},
 		userId: {
-			type: Schema.Types.ObjectId,
-			ref: 'User',
+			type: String,
 			required: false,
+			index: true,
 		},
 		title: {
 			type: String,
@@ -68,21 +65,20 @@ const notificationSchema = new Schema<Notification>(
 				'info',
 			],
 		},
-		read: {
+		isRead: {
 			type: Boolean,
 			default: false,
-		},
-		dismissed: {
-			type: Boolean,
-			default: false,
+			required: true,
 		},
 		metadata: {
-			type: Schema.Types.Mixed,
-			required: false,
-		},
-		readAt: {
-			type: Date,
-			required: false,
+			invoiceId: { type: String, required: false },
+			quoteId: { type: String, required: false },
+			clientId: { type: String, required: false },
+			vehicleId: { type: String, required: false },
+			vehicleIds: { type: [String], required: false },
+			vehicleCount: { type: Number, required: false },
+			amount: { type: Number, required: false },
+			paymentId: { type: String, required: false },
 		},
 	},
 	{

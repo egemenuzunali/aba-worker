@@ -30,8 +30,7 @@ export class NotificationService {
 				title: params.title,
 				message: params.message,
 				type: params.type,
-				read: false,
-				dismissed: false,
+				isRead: false,
 				metadata: params.metadata,
 			});
 
