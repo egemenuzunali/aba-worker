@@ -522,11 +522,11 @@ export class StatusUpdateScheduler {
 			console.log('⏭️  RDW daily sync scheduler disabled');
 		}
 
-		// Schedule RDW sync every 6 weeks (every Sunday at 2 AM)
+		// Schedule RDW sync every 3 months (every Sunday at 2 AM)
 		if (config.enableRdwFullSync) {
 			const rdwSyncJob = cron.schedule('0 2 * * 0', async () => {
 				// This runs every Sunday at 2 AM
-				// Checks internally if 6+ weeks have passed since last sync
+				// Checks internally if 3+ months have passed since last sync
 				await this.runRdwSync();
 			}, {
 				scheduled: false,
@@ -535,7 +535,7 @@ export class StatusUpdateScheduler {
 
 			this.jobs.set('rdw-sync', rdwSyncJob);
 			rdwSyncJob.start();
-			console.log('✅ RDW full sync (6-week) scheduler started');
+			console.log('✅ RDW full sync (3-month) scheduler started');
 		} else {
 			console.log('⏭️  RDW full sync scheduler disabled');
 		}
@@ -583,7 +583,7 @@ export class StatusUpdateScheduler {
 			console.log('   1:30 AM  - Daily       - APK status check (creates notifications based on current APK status)');
 		}
 		if (config.enableRdwFullSync) {
-			console.log('   2:00 AM  - Every 6wks  - Full RDW vehicle sync (only if 6+ weeks since last sync)');
+			console.log('   2:00 AM  - Every 3mo   - Full RDW vehicle sync (only if 3+ months since last sync)');
 		}
 		if (config.enableMaintenanceReminders) {
 			console.log('   3:00 AM  - Weekly      - Maintenance reminder check');

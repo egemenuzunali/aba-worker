@@ -37,15 +37,15 @@ export class RdwSyncService {
 		let companiesProcessed = 0;
 
 		try {
-			// Check if it's been 6 weeks since last sync (unless forced)
+			// Check if it's been 3 months since last sync (unless forced)
 			if (!force) {
 				const systemDoc = await db.default.models.System.findOne();
 				if (systemDoc?.lastRdwSync) {
-					const sixWeeksAgo = new Date();
-					sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42); // 6 weeks = 42 days
+					const threeMonthsAgo = new Date();
+					threeMonthsAgo.setDate(threeMonthsAgo.getDate() - 90); // 3 months = ~90 days
 
-					if (systemDoc.lastRdwSync > sixWeeksAgo) {
-						console.log('⏭️  Skipping RDW sync - last sync was less than 6 weeks ago');
+					if (systemDoc.lastRdwSync > threeMonthsAgo) {
+						console.log('⏭️  Skipping RDW sync - last sync was less than 3 months ago');
 						console.log(`   Last sync: ${systemDoc.lastRdwSync}`);
 						return { synced: 0, errors: [], companies: 0 };
 					}
@@ -109,8 +109,6 @@ export class RdwSyncService {
 		const { NotificationService } = await import('../lib/notificationService');
 
 		let syncedCount = 0;
-		const BATCH_SIZE = 25; // Process 25 vehicles at a time (increased from 10)
-		const BATCH_DELAY = 500; // 0.5 second delay between batches (reduced from 2s)
 		const PAGE_SIZE = 500; // Fetch vehicles in pages to avoid memory issues
 
 		// Get total count first
@@ -120,7 +118,16 @@ export class RdwSyncService {
 			license_plate: { $exists: true, $nin: [null, ''] }
 		});
 
-		console.log(`Processing ${totalVehicles} vehicles in pages of ${PAGE_SIZE}, batches of ${BATCH_SIZE}`);
+		// Adaptive batch sizing and delays based on fleet size to prevent API rate limiting
+		const BATCH_SIZE = totalVehicles > 10000 ? 10 :
+		                    totalVehicles > 5000  ? 15 :
+		                    totalVehicles > 1000  ? 20 : 25;
+
+		const BATCH_DELAY = totalVehicles > 10000 ? 2000 :
+		                    totalVehicles > 5000  ? 1500 :
+		                    totalVehicles > 1000  ? 1000 : 500;
+
+		console.log(`Processing ${totalVehicles} vehicles in pages of ${PAGE_SIZE}, batches of ${BATCH_SIZE} (delay: ${BATCH_DELAY}ms)`);
 
 		// Process vehicles in pages to avoid loading all into memory
 		for (let page = 0; page < Math.ceil(totalVehicles / PAGE_SIZE); page++) {
@@ -313,9 +320,16 @@ export class RdwSyncService {
 				return { synced: 0, errors: [], totalVehicles: 0 };
 			}
 
-			// Process vehicles in batches
-			const BATCH_SIZE = 25;
-			const BATCH_DELAY = 500; // 0.5 second delay between batches
+			// Adaptive batch sizing based on number of critical vehicles to prevent API rate limiting
+			const BATCH_SIZE = totalVehiclesFound > 2000 ? 10 :
+			                    totalVehiclesFound > 1000 ? 15 :
+			                    totalVehiclesFound > 500  ? 20 : 25;
+
+			const BATCH_DELAY = totalVehiclesFound > 2000 ? 2000 :
+			                    totalVehiclesFound > 1000 ? 1500 :
+			                    totalVehiclesFound > 500  ? 1000 : 500;
+
+			console.log(`   Using adaptive batching: ${BATCH_SIZE} vehicles per batch, ${BATCH_DELAY}ms delay`);
 
 			for (let i = 0; i < criticalVehicles.length; i += BATCH_SIZE) {
 				const batch = criticalVehicles.slice(i, i + BATCH_SIZE);

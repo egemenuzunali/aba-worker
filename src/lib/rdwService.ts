@@ -179,6 +179,16 @@ export function determineFieldsToUpdate(currentVehicle: any, rdwData: RDWVehicle
 
 	if (rdwData.apkExpiryDate && (!currentVehicle.apk_expiry || rdwData.apkExpiryDate.getTime() !== currentVehicle.apk_expiry.getTime())) {
 		updates.apk_expiry = rdwData.apkExpiryDate;
+		// Reset email sent timestamps when APK date changes to allow new reminders
+		updates.lastApkEmailSentForExpired = null;
+		updates.lastApkEmailSentForExpiring = null;
+		// Reset dismissal fields (e.g., vehicle renewed APK), but preserve permanent dismissals
+		const hasPermanentDismissal = currentVehicle.apkRemindersDismissed === true &&
+			(currentVehicle.apkRemindersDisabledUntil === null || currentVehicle.apkRemindersDisabledUntil === undefined);
+		if (!hasPermanentDismissal) {
+			updates.apkRemindersDismissed = false;
+			updates.apkRemindersDisabledUntil = null;
+		}
 	}
 
 	if (rdwData.datumTenaamstelling && (!currentVehicle.datum_tenaamstelling || rdwData.datumTenaamstelling.getTime() !== currentVehicle.datum_tenaamstelling.getTime())) {
