@@ -27,6 +27,14 @@ export class RdwSyncService {
 
 	/**
 	 * Sync all vehicles from active companies with RDW data
+	 *
+	 * PERFORMANCE NOTE: At 50,000+ vehicles, this sync will exceed RDW API rate limits (10,000 calls/day).
+	 * When reaching 50k vehicles, implement sharded sync across 3 days:
+	 * - Day 1: Sync vehicles with ID % 3 === 0 (~16,667 vehicles)
+	 * - Day 2: Sync vehicles with ID % 3 === 1 (~16,667 vehicles)
+	 * - Day 3: Sync vehicles with ID % 3 === 2 (~16,667 vehicles)
+	 * This spreads the load to ~8,333 API calls per day (with 4-week skip rule).
+	 * Run shards on Wed/Thu/Fri to avoid overlapping with daily sync (Mon-Sun: ~7,500 calls).
 	 */
 	async syncAllCompaniesVehicles(force = false): Promise<{ synced: number; errors: string[]; companies: number }> {
 		const db = await import('../lib/db');
@@ -268,6 +276,11 @@ export class RdwSyncService {
 
 	/**
 	 * Sync only expired and expiring vehicles with RDW data (runs daily)
+	 *
+	 * PERFORMANCE NOTE: This sync is designed to handle fleets up to ~60,000 vehicles safely.
+	 * At 60k vehicles, the 80-day window contains ~9,000 vehicles, which is under the 10k/day RDW API limit.
+	 * Beyond 60k vehicles, consider reducing the notification window (e.g., 80 days → 60 days) or
+	 * implementing tiered daily sync (0-14 days daily, 15-80 days weekly).
 	 */
 	async syncExpiredAndExpiringVehicles(): Promise<{ synced: number; errors: string[]; totalVehicles: number }> {
 		const db = await import('../lib/db');
