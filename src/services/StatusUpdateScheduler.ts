@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { RdwSyncService } from './RdwSyncService';
 import { ApkStatusService } from './ApkStatusService';
 import { MaintenanceReminderService } from './MaintenanceReminderService';
+import { logger } from '../lib/logger';
 
 export class StatusUpdateScheduler {
 	private static instance: StatusUpdateScheduler;
@@ -45,7 +46,8 @@ export class StatusUpdateScheduler {
 		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired quotes using system-wide date tracking...');
+			const startTime = Date.now();
+			logger.debug('Checking for expired quotes using system-wide date tracking');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
 
@@ -53,14 +55,14 @@ export class StatusUpdateScheduler {
 			const systemDoc = await db.default.models.System.findOne();
 			const lastCheckDate = systemDoc?.lastQuoteExpiryCheck || new Date('2020-01-01');
 
-			console.log(`📅 Last quote expiry check: ${lastCheckDate.toISOString()}`);
+			logger.debug('Quote expiry check details', { lastCheckDate: lastCheckDate.toISOString() });
 
 			// Get all companies with invoice status checking enabled
 			const enabledCompanies = await db.default.models.Company.find({
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
 			}).select('_id name');
 
-			console.log(`📊 Processing ${enabledCompanies.length} companies for expired quotes`);
+			logger.info(`Processing ${enabledCompanies.length} companies for expired quotes`);
 
 			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
@@ -113,7 +115,7 @@ export class StatusUpdateScheduler {
 
 				} catch (companyError) {
 					const errorMsg = `Failed to process expired quotes for company ${company.name}: ${companyError}`;
-					console.error('❌', errorMsg);
+					logger.error(errorMsg);
 					errors.push(errorMsg);
 				}
 			}
@@ -121,11 +123,17 @@ export class StatusUpdateScheduler {
 			// Update system-wide timestamp once after all companies processed
 			await this.updateSystemExpiryCheckDate('quote');
 
-			console.log(`✅ Quote expiry check completed: ${totalUpdated} quotes marked as expired across ${enabledCompanies.length} companies`);
+			logger.serviceComplete('Quote expiry check', Date.now() - startTime, {
+				total: totalUpdated,
+				successful: totalUpdated,
+				failed: errors.length,
+				skipped: 0,
+				duration: Date.now() - startTime
+			});
 
 		} catch (error) {
 			const errorMsg = `Failed to update expired quotes: ${(error as Error).message}`;
-			console.error('❌', errorMsg);
+			logger.error(errorMsg);
 			errors.push(errorMsg);
 		}
 
@@ -143,7 +151,8 @@ export class StatusUpdateScheduler {
 		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired invoices using system-wide date tracking...');
+			const startTime = Date.now();
+			logger.debug('Checking for expired invoices using system-wide date tracking');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
 
@@ -151,14 +160,14 @@ export class StatusUpdateScheduler {
 			const systemDoc = await db.default.models.System.findOne();
 			const lastCheckDate = systemDoc?.lastInvoiceExpiryCheck || new Date('2020-01-01');
 
-			console.log(`📅 Last invoice expiry check: ${lastCheckDate.toISOString()}`);
+			logger.debug('Invoice expiry check details', { lastCheckDate: lastCheckDate.toISOString() });
 
 			// Get all companies with invoice status checking enabled
 			const enabledCompanies = await db.default.models.Company.find({
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
 			}).select('_id name');
 
-			console.log(`📊 Processing ${enabledCompanies.length} companies for expired invoices`);
+			logger.info(`Processing ${enabledCompanies.length} companies for expired invoices`);
 
 			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
@@ -223,7 +232,7 @@ export class StatusUpdateScheduler {
 
 				} catch (companyError) {
 					const errorMsg = `Failed to process expired invoices for company ${company.name}: ${companyError}`;
-					console.error('❌', errorMsg);
+					logger.error(errorMsg);
 					errors.push(errorMsg);
 				}
 			}
@@ -231,11 +240,17 @@ export class StatusUpdateScheduler {
 			// Update system-wide timestamp once after all companies processed
 			await this.updateSystemExpiryCheckDate('invoice');
 
-			console.log(`✅ Invoice expiry check completed: ${totalUpdated} invoices marked as expired across ${enabledCompanies.length} companies`);
+			logger.serviceComplete('Invoice expiry check', Date.now() - startTime, {
+				total: totalUpdated,
+				successful: totalUpdated,
+				failed: errors.length,
+				skipped: 0,
+				duration: Date.now() - startTime
+			});
 
 		} catch (error) {
 			const errorMsg = `Failed to update expired invoices: ${(error as Error).message}`;
-			console.error('❌', errorMsg);
+			logger.error(errorMsg);
 			errors.push(errorMsg);
 		}
 
@@ -253,7 +268,8 @@ export class StatusUpdateScheduler {
 		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired purchase invoices using system-wide date tracking...');
+			const startTime = Date.now();
+			logger.debug('Checking for expired purchase invoices using system-wide date tracking');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
 
@@ -261,14 +277,14 @@ export class StatusUpdateScheduler {
 			const systemDoc = await db.default.models.System.findOne();
 			const lastCheckDate = systemDoc?.lastPurchaseInvoiceExpiryCheck || new Date('2020-01-01');
 
-			console.log(`📅 Last purchase invoice expiry check: ${lastCheckDate.toISOString()}`);
+			logger.debug('Purchase invoice expiry check details', { lastCheckDate: lastCheckDate.toISOString() });
 
 			// Get all companies with invoice status checking enabled
 			const enabledCompanies = await db.default.models.Company.find({
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
 			}).select('_id name');
 
-			console.log(`📊 Processing ${enabledCompanies.length} companies for expired purchase invoices`);
+			logger.info(`Processing ${enabledCompanies.length} companies for expired purchase invoices`);
 
 			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
@@ -297,7 +313,7 @@ export class StatusUpdateScheduler {
 
 				} catch (companyError) {
 					const errorMsg = `Failed to process expired purchase invoices for company ${company.name}: ${companyError}`;
-					console.error('❌', errorMsg);
+					logger.error(errorMsg);
 					errors.push(errorMsg);
 				}
 			}
@@ -305,11 +321,17 @@ export class StatusUpdateScheduler {
 			// Update system-wide timestamp once after all companies processed
 			await this.updateSystemExpiryCheckDate('purchaseInvoice');
 
-			console.log(`✅ Purchase invoice expiry check completed: ${totalUpdated} purchase invoices marked as expired across ${enabledCompanies.length} companies`);
+			logger.serviceComplete('Purchase invoice expiry check', Date.now() - startTime, {
+				total: totalUpdated,
+				successful: totalUpdated,
+				failed: errors.length,
+				skipped: 0,
+				duration: Date.now() - startTime
+			});
 
 		} catch (error) {
 			const errorMsg = `Failed to update expired purchase invoices: ${(error as Error).message}`;
-			console.error('❌', errorMsg);
+			logger.error(errorMsg);
 			errors.push(errorMsg);
 		}
 
@@ -321,7 +343,7 @@ export class StatusUpdateScheduler {
 	 */
 	private async runExpiryCheck(): Promise<void> {
 		const { config } = require('../lib/config');
-		console.log('🚀 Starting scheduled expiry check...');
+		logger.info('Starting scheduled expiry check');
 		const startTime = Date.now();
 
 		try {
@@ -343,11 +365,11 @@ export class StatusUpdateScheduler {
 			}
 
 			if (tasks.length === 0) {
-				console.log('⏭️  All document expiry checks disabled, skipping...');
+				logger.info('All document expiry checks disabled, skipping');
 				return;
 			}
 
-			console.log(`📋 Running expiry checks for: ${types.join(', ')}`);
+			logger.info(`Running expiry checks for: ${types.join(', ')}`);
 
 			const results = await Promise.allSettled(tasks);
 
@@ -362,22 +384,22 @@ export class StatusUpdateScheduler {
 					allErrors.push(...result.value.errors);
 				} else {
 					const errorMsg = `Failed to check expiry for ${type}: ${result.reason}`;
-					console.error('❌', errorMsg);
+					logger.error(errorMsg);
 					allErrors.push(errorMsg);
 				}
 			});
 
 			const duration = Date.now() - startTime;
-			console.log(`🎉 Expiry check completed in ${duration}ms`);
-			console.log(`📊 Summary: ${totalExpired} documents marked as expired, ${allErrors.length} errors`);
-
-			if (allErrors.length > 0) {
-				console.error('⚠️  Errors occurred:');
-				allErrors.forEach(error => console.error(`   - ${error}`));
-			}
+			logger.serviceComplete('Scheduled expiry check', duration, {
+				total: totalExpired,
+				successful: totalExpired,
+				failed: allErrors.length,
+				skipped: 0,
+				duration
+			});
 
 		} catch (error) {
-			console.error('❌ Unexpected error during expiry check:', error);
+			logger.error('Unexpected error during expiry check', { error: (error as Error).message });
 		}
 	}
 
@@ -385,7 +407,7 @@ export class StatusUpdateScheduler {
 	 * Run RDW vehicle data sync for all active companies
 	 */
 	private async runRdwSync(): Promise<void> {
-		console.log('🚀 Starting scheduled RDW vehicle sync...');
+		logger.info('Starting scheduled RDW vehicle sync');
 		const startTime = Date.now();
 
 		try {
@@ -393,15 +415,15 @@ export class StatusUpdateScheduler {
 			const result = await rdwService.syncAllCompaniesVehicles();
 
 			const duration = Date.now() - startTime;
-			console.log(`🎉 RDW sync completed in ${duration}ms`);
-			console.log(`📊 Summary: ${result.synced} vehicles synced across ${result.companies} companies, ${result.errors.length} errors`);
-
-			if (result.errors.length > 0) {
-				console.error('⚠️  Errors occurred during RDW sync:');
-				result.errors.forEach((error: string) => console.error(`   - ${error}`));
-			}
+			logger.serviceComplete('Scheduled RDW vehicle sync', duration, {
+				total: result.synced,
+				successful: result.synced,
+				failed: result.errors.length,
+				skipped: 0,
+				duration
+			});
 		} catch (error) {
-			console.error('❌ Unexpected error during RDW sync:', error);
+			logger.error('Unexpected error during RDW sync', { error: (error as Error).message });
 		}
 	}
 
@@ -411,7 +433,7 @@ export class StatusUpdateScheduler {
 	 * Separate from RDW sync which fetches fresh data from the RDW API
 	 */
 	private async runApkStatusCheck(): Promise<void> {
-		console.log('🔄 Starting scheduled APK status check...');
+		logger.info('Starting scheduled APK status check');
 		const startTime = Date.now();
 
 		try {
@@ -419,15 +441,15 @@ export class StatusUpdateScheduler {
 			const result = await apkStatusService.checkApkExpiryForAllCompanies();
 
 			const duration = Date.now() - startTime;
-			console.log(`✅ APK status check completed in ${duration}ms`);
-			console.log(`📊 Summary: ${result.notifications} notifications created, ${result.errors.length} errors`);
-
-			if (result.errors.length > 0) {
-				console.error('⚠️  Errors occurred during APK status check:');
-				result.errors.forEach((error: string) => console.error(`   - ${error}`));
-			}
+			logger.serviceComplete('Scheduled APK status check', duration, {
+				total: result.notifications,
+				successful: result.notifications,
+				failed: result.errors.length,
+				skipped: 0,
+				duration
+			});
 		} catch (error) {
-			console.error('❌ Unexpected error during APK status check:', error);
+			logger.error('Unexpected error during APK status check', { error: (error as Error).message });
 		}
 	}
 
@@ -435,7 +457,7 @@ export class StatusUpdateScheduler {
 	 * Run daily RDW sync for expired and expiring vehicles
 	 */
 	private async runDailyExpiredVehiclesSync(): Promise<void> {
-		console.log('🚀 Starting scheduled daily sync for expired/expiring vehicles...');
+		logger.info('Starting scheduled daily sync for expired/expiring vehicles');
 		const startTime = Date.now();
 
 		try {
@@ -443,15 +465,15 @@ export class StatusUpdateScheduler {
 			const result = await rdwService.syncExpiredAndExpiringVehicles();
 
 			const duration = Date.now() - startTime;
-			console.log(`🎉 Daily expired/expiring vehicles sync completed in ${duration}ms`);
-			console.log(`📊 Summary: ${result.synced}/${result.totalVehicles} vehicles synced, ${result.errors.length} errors`);
-
-			if (result.errors.length > 0) {
-				console.error('⚠️  Errors occurred during daily expired/expiring vehicles sync:');
-				result.errors.forEach((error: string) => console.error(`   - ${error}`));
-			}
+			logger.serviceComplete('Scheduled daily expired/expiring vehicles sync', duration, {
+				total: result.totalVehicles,
+				successful: result.synced,
+				failed: result.errors.length,
+				skipped: 0,
+				duration
+			});
 		} catch (error) {
-			console.error('❌ Unexpected error during daily expired/expiring vehicles sync:', error);
+			logger.error('Unexpected error during daily expired/expiring vehicles sync', { error: (error as Error).message });
 		}
 	}
 
@@ -459,7 +481,7 @@ export class StatusUpdateScheduler {
 	 * Run weekly maintenance reminder check
 	 */
 	private async runMaintenanceReminderCheck(): Promise<void> {
-		console.log('🔧 Starting scheduled maintenance reminder check...');
+		logger.info('Starting scheduled maintenance reminder check');
 		const startTime = Date.now();
 
 		try {
@@ -467,15 +489,15 @@ export class StatusUpdateScheduler {
 			const result = await maintenanceService.checkMaintenanceReminders();
 
 			const duration = Date.now() - startTime;
-			console.log(`✅ Maintenance reminder check completed in ${duration}ms`);
-			console.log(`📊 Summary: ${result.notified} notifications created, ${result.errors.length} errors`);
-
-			if (result.errors.length > 0) {
-				console.error('⚠️  Errors occurred during maintenance reminder check:');
-				result.errors.forEach(error => console.error(`   - ${error}`));
-			}
+			logger.serviceComplete('Scheduled maintenance reminder check', duration, {
+				total: result.notified,
+				successful: result.notified,
+				failed: result.errors.length,
+				skipped: 0,
+				duration
+			});
 		} catch (error) {
-			console.error('❌ Unexpected error during maintenance reminder check:', error);
+			logger.error('Unexpected error during maintenance reminder check', { error: (error as Error).message });
 		}
 	}
 
@@ -485,7 +507,9 @@ export class StatusUpdateScheduler {
 	public startScheduler(): void {
 		const { config } = require('../lib/config');
 
-		console.log('⏰ Starting schedulers based on configuration...');
+		logger.info('Starting schedulers based on configuration');
+
+		const activeSchedulers: string[] = [];
 
 		// Schedule daily at midnight for document expiry checks
 		if (config.enableDocumentExpiryCheck) {
@@ -498,9 +522,8 @@ export class StatusUpdateScheduler {
 
 			this.jobs.set('daily-expiry-check', dailyJob);
 			dailyJob.start();
-			console.log('✅ Document expiry check scheduler started');
-		} else {
-			console.log('⏭️  Document expiry check scheduler disabled');
+			activeSchedulers.push('Document expiry check');
+			logger.debug('Document expiry check scheduler started');
 		}
 
 		// Schedule daily sync for expired/expiring vehicles (every day at 1:00 AM)
@@ -517,9 +540,8 @@ export class StatusUpdateScheduler {
 
 			this.jobs.set('daily-expired-vehicles-sync', dailyExpiredVehiclesSyncJob);
 			dailyExpiredVehiclesSyncJob.start();
-			console.log('✅ RDW daily sync scheduler started');
-		} else {
-			console.log('⏭️  RDW daily sync scheduler disabled');
+			activeSchedulers.push('RDW daily sync');
+			logger.debug('RDW daily sync scheduler started');
 		}
 
 		// Schedule RDW sync every 3 months (every Sunday at 2 AM)
@@ -535,9 +557,8 @@ export class StatusUpdateScheduler {
 
 			this.jobs.set('rdw-sync', rdwSyncJob);
 			rdwSyncJob.start();
-			console.log('✅ RDW full sync (3-month) scheduler started');
-		} else {
-			console.log('⏭️  RDW full sync scheduler disabled');
+			activeSchedulers.push('RDW full sync');
+			logger.debug('RDW full sync scheduler started');
 		}
 
 		// Schedule daily APK status check (every day at 1:30 AM)
@@ -551,9 +572,8 @@ export class StatusUpdateScheduler {
 
 			this.jobs.set('daily-apk-status-check', dailyApkStatusCheckJob);
 			dailyApkStatusCheckJob.start();
-			console.log('✅ APK status check scheduler started (daily)');
-		} else {
-			console.log('⏭️  APK status check scheduler disabled');
+			activeSchedulers.push('APK status check');
+			logger.debug('APK status check scheduler started');
 		}
 
 		// Schedule weekly maintenance reminder check (every Sunday at 3:00 AM)
@@ -567,46 +587,31 @@ export class StatusUpdateScheduler {
 
 			this.jobs.set('weekly-maintenance-check', weeklyMaintenanceCheckJob);
 			weeklyMaintenanceCheckJob.start();
-			console.log('✅ Maintenance reminder scheduler started');
-		} else {
-			console.log('⏭️  Maintenance reminder scheduler disabled');
+			activeSchedulers.push('Maintenance reminder');
+			logger.debug('Maintenance reminder scheduler started');
 		}
 
-		console.log('\n⏰ Active schedulers summary (chronological order):');
-		if (config.enableDocumentExpiryCheck) {
-			console.log('   12:00 AM - Daily       - Document expiry check (quotes, invoices, purchase invoices)');
-		}
-		if (config.enableRdwDailySync) {
-			console.log('   1:00 AM  - Daily       - Expired/expiring vehicles RDW sync (fetches fresh APK data from RDW API)');
-		}
-		if (config.enableApkStatusCheck) {
-			console.log('   1:30 AM  - Daily       - APK status check (creates notifications based on current APK status)');
-		}
-		if (config.enableRdwFullSync) {
-			console.log('   2:00 AM  - Every 3mo   - Full RDW vehicle sync (only if 3+ months since last sync)');
-		}
-		if (config.enableMaintenanceReminders) {
-			console.log('   3:00 AM  - Weekly      - Maintenance reminder check');
-		}
-		console.log('');
+		logger.info(`Scheduler initialization complete. Active schedulers: ${activeSchedulers.join(', ')}`);
 	}
 
 	/**
 	 * Stop the scheduler
 	 */
 	public stopScheduler(): void {
+		logger.info(`Stopping ${this.jobs.size} schedulers`);
 		this.jobs.forEach((job, name) => {
 			job.stop();
-			console.log(`🛑 Stopped scheduler: ${name}`);
+			logger.debug(`Stopped scheduler: ${name}`);
 		});
 		this.jobs.clear();
+		logger.info('All schedulers stopped');
 	}
 
 	/**
 	 * Run expiry check manually (for testing or admin triggers)
 	 */
 	public async runManualUpdate(): Promise<void> {
-		console.log('🔧 Running manual expiry check...');
+		logger.info('Running manual expiry check');
 		await this.runExpiryCheck();
 	}
 
@@ -614,7 +619,7 @@ export class StatusUpdateScheduler {
 	 * Run RDW sync manually (for testing or admin triggers)
 	 */
 	public async runManualRdwSync(): Promise<void> {
-		console.log('🔧 Running manual RDW sync...');
+		logger.info('Running manual RDW sync');
 		await this.runRdwSync();
 	}
 
@@ -622,7 +627,7 @@ export class StatusUpdateScheduler {
 	 * Run APK status check manually (for testing or admin triggers)
 	 */
 	public async runManualApkStatusCheck(): Promise<void> {
-		console.log('🔧 Running manual APK status check...');
+		logger.info('Running manual APK status check');
 		await this.runApkStatusCheck();
 	}
 
@@ -630,7 +635,7 @@ export class StatusUpdateScheduler {
 	 * Run daily expired/expiring vehicles sync manually (for testing or admin triggers)
 	 */
 	public async runManualDailyExpiredVehiclesSync(): Promise<void> {
-		console.log('🔧 Running manual daily expired/expiring vehicles sync...');
+		logger.info('Running manual daily expired/expiring vehicles sync');
 		await this.runDailyExpiredVehiclesSync();
 	}
 
@@ -638,7 +643,7 @@ export class StatusUpdateScheduler {
 	 * Run maintenance reminder check manually (for testing or admin triggers)
 	 */
 	public async runManualMaintenanceCheck(): Promise<void> {
-		console.log('🔧 Running manual maintenance reminder check...');
+		logger.info('Running manual maintenance reminder check');
 		await this.runMaintenanceReminderCheck();
 	}
 
@@ -680,9 +685,9 @@ export class StatusUpdateScheduler {
 				await systemDoc.save();
 			}
 
-			console.log(`📅 System ${type} expiry check date updated: ${(systemDoc as any)[fieldName]}`);
+			logger.debug(`System ${type} expiry check date updated`, { date: (systemDoc as any)[fieldName].toISOString() });
 		} catch (error) {
-			console.error(`❌ Failed to update system ${type} expiry check date:`, error);
+			logger.error(`Failed to update system ${type} expiry check date`, { error: (error as Error).message, type });
 		}
 	}
 

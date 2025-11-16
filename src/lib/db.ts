@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import { Vehicle, Company, Client, System, Quote, Invoice, PurchaseInvoice, Notification } from '../models'
 import { mongoString } from './config'
+import { logger } from './logger'
 
 
 interface Models {
@@ -16,11 +17,11 @@ interface Models {
 
 class db {
 	static async connect(): Promise<void> {
-		console.info('Setting up mongodb connection... 🖥️')
+		logger.info('Setting up mongodb connection')
 		mongoose.set("strictQuery", false);
 
 		await mongoose.connect(mongoString)
-		console.info('DB Connection set up ✅')
+		logger.info('DB Connection set up successfully')
 	}
 
 	static models: Models = {
@@ -36,7 +37,7 @@ class db {
 
 	static async disconnect(): Promise<void> {
 		await mongoose.disconnect();
-		console.info('DB Connection closed 👋')
+		logger.info('DB Connection closed')
 	}
 }
 

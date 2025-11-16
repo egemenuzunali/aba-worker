@@ -1,3 +1,5 @@
+import { logger } from '../lib/logger';
+
 export class MaintenanceReminderService {
 	private static instance: MaintenanceReminderService;
 
@@ -18,7 +20,7 @@ export class MaintenanceReminderService {
 		const db = await import('../lib/db');
 		const { NotificationService } = await import('../lib/notificationService');
 
-		console.log('🔧 Starting maintenance reminder check for all active companies...');
+		logger.info('Starting maintenance reminder check for all active companies');
 		const startTime = Date.now();
 		const errors: string[] = [];
 		let totalNotified = 0;
@@ -29,7 +31,7 @@ export class MaintenanceReminderService {
 				'serviceModules.apkEnabled': { $ne: false }
 			}).select('_id name');
 
-			console.log(`📊 Found ${activeCompanies.length} active companies to check`);
+			logger.info(`Found ${activeCompanies.length} active companies to check`);
 
 			const today = new Date();
 			const fourteenDaysFromNow = new Date();
@@ -152,7 +154,7 @@ export class MaintenanceReminderService {
 								);
 
 								notificationCount++;
-								console.log(`⚠️  ${company.name}: ${overdueVehicles.length} vehicles with overdue maintenance`);
+								logger.debug(`${company.name}: ${overdueVehicles.length} vehicles with overdue maintenance`);
 							}
 
 							// Create notification for upcoming maintenance
@@ -199,12 +201,12 @@ export class MaintenanceReminderService {
 								);
 
 								notificationCount++;
-								console.log(`📅 ${company.name}: ${dueSoonVehicles.length} vehicles with upcoming maintenance`);
+								logger.debug(`${company.name}: ${dueSoonVehicles.length} vehicles with upcoming maintenance`);
 							}
 
 							return { company, notificationCount };
 						} catch (err) {
-							console.error(`❌ Error checking maintenance for company ${company.name}:`, err);
+							logger.error(`Error checking maintenance for company ${company.name}`, { error: (err as Error).message });
 							throw err;
 						}
 					})
@@ -216,23 +218,24 @@ export class MaintenanceReminderService {
 						totalNotified += result.value.notificationCount;
 					} else {
 						const errorMsg = `Failed to check maintenance for company: ${result.reason}`;
-						console.error('❌', errorMsg);
+						logger.error(errorMsg);
 						errors.push(errorMsg);
 					}
 				});
 			}
 
-			const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-			console.log(`✅ Maintenance reminder check completed in ${duration}s`);
-			console.log(`📊 Results: ${totalNotified} notifications created across ${activeCompanies.length} companies`);
-
-			if (errors.length > 0) {
-				console.log(`⚠️  ${errors.length} errors encountered`);
-			}
+			const duration = Date.now() - startTime;
+			logger.serviceComplete('Maintenance reminder check', duration, {
+				total: totalNotified,
+				successful: totalNotified,
+				failed: errors.length,
+				skipped: 0,
+				duration
+			});
 
 			return { notified: totalNotified, errors };
 		} catch (error) {
-			console.error('❌ Fatal error during maintenance reminder check:', error);
+			logger.error('Fatal error during maintenance reminder check', { error: (error as Error).message });
 			errors.push((error as Error).message || 'Unknown error');
 			return { notified: totalNotified, errors };
 		}
@@ -245,7 +248,7 @@ export class MaintenanceReminderService {
 		const db = await import('../lib/db');
 		const { NotificationService } = await import('../lib/notificationService');
 
-		console.log(`🔧 Checking maintenance reminders for company ${companyId}...`);
+		logger.debug(`Checking maintenance reminders for company ${companyId}`);
 
 		const today = new Date();
 		const fourteenDaysFromNow = new Date();
@@ -407,7 +410,7 @@ export class MaintenanceReminderService {
 			notificationCount++;
 		}
 
-		console.log(`✅ Created ${notificationCount} notifications for company ${companyId}`);
+		logger.debug(`Created ${notificationCount} notifications for company ${companyId}`);
 
 		return { notified: notificationCount };
 	}

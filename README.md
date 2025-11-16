@@ -25,7 +25,7 @@ A Node.js/TypeScript microservice for handling APK (Algemene Periodieke Keuring 
 - **Email**: Nodemailer
 - **Caching**: node-cache
 - **Date Handling**: date-fns
-- **Process Management**: PM2
+- **Process Management**: Direct Node.js
 - **Containerization**: Docker
 
 ## Quick Start
@@ -56,10 +56,7 @@ yarn lint
 # Build the application
 yarn build
 
-# Start with PM2
-pm2 start ecosystem.config.js --env production
-
-# Or run directly
+# Start the application
 NODE_ENV=production yarn start
 ```
 
@@ -221,21 +218,6 @@ The service integrates with the Dutch RDW (Rijksdienst voor het Wegverkeer) API 
          retries: 3
    ```
 
-### PM2 Deployment
-
-```bash
-# Install PM2 globally
-npm install -g pm2
-
-# Start with PM2
-pm2 start ecosystem.config.js --env production
-
-# Save PM2 configuration
-pm2 save
-
-# Set up PM2 startup script
-pm2 startup
-```
 
 ## Monitoring
 
@@ -249,10 +231,10 @@ The service provides comprehensive health checks at `/health` including:
 
 ### Logs
 
-PM2 provides structured logging:
-- Error logs: `./logs/err.log`
-- Output logs: `./logs/out.log`
-- Combined logs: `./logs/combined.log`
+The service logs to stdout/stderr. For production deployments, configure your process manager to capture logs:
+- Error logs: Redirect stderr to log files
+- Output logs: Redirect stdout to log files
+- Combined logs: Use log aggregation tools like rsyslog or journald
 
 ### Metrics
 
@@ -323,9 +305,13 @@ yarn test --coverage
 
 ### Logs
 
-Check PM2 logs:
+Check application logs:
 ```bash
-pm2 logs aba-worker
+# If running with systemd
+journalctl -u aba-worker -f
+
+# If running directly, check stdout/stderr
+# Or configure your process manager's log location
 ```
 
 ## Contributing

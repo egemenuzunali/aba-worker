@@ -19,7 +19,7 @@ try {
 	console.log(`📡 Port: ${config.port}`);
 	console.log(`📊 Log Level: ${config.logLevel}`);
 } catch (error) {
-	console.error('❌ Configuration validation failed:', error);
+	console.error('Configuration validation failed:', error);
 	process.exit(1);
 }
 

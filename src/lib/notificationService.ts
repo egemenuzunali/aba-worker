@@ -17,6 +17,8 @@ interface CreateNotificationParams {
 	};
 }
 
+import { logger } from './logger';
+
 export class NotificationService {
 	static async createNotification(params: CreateNotificationParams) {
 		try {
@@ -34,11 +36,11 @@ export class NotificationService {
 				metadata: params.metadata,
 			});
 
-			console.log(`📢 Notification created: ${notification._id} - ${params.title}`);
+			logger.debug(`Notification created: ${notification._id} - ${params.title}`);
 
 			return notification;
 		} catch (error) {
-			console.error('Failed to create notification:', error);
+			logger.error('Failed to create notification', { error: (error as Error).message });
 			throw error;
 		}
 	}

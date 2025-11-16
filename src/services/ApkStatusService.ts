@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { logger } from '../lib/logger';
 
 /**
  * ApkStatusService - Responsible for checking APK status and creating notifications
@@ -21,7 +22,7 @@ export class ApkStatusService {
 	 */
 	async checkApkExpiryForAllCompanies(): Promise<{ notifications: number; errors: string[] }> {
 		const db = await import('../lib/db');
-		console.log('🔄 Checking APK expiry status for all companies...');
+		logger.info('Checking APK expiry status for all companies');
 		const startTime = Date.now();
 		const errors: string[] = [];
 		let notificationsCreated = 0;
@@ -32,7 +33,7 @@ export class ApkStatusService {
 				'serviceModules.apkNotificationsEnabled': { $ne: false }
 			}).select('_id name');
 
-			console.log(`📊 Found ${companies.length} companies with APK notifications enabled`);
+			logger.info(`Found ${companies.length} companies with APK notifications enabled`);
 
 			for (const company of companies) {
 				try {
@@ -40,7 +41,7 @@ export class ApkStatusService {
 					notificationsCreated += created;
 				} catch (error) {
 					const errorMsg = `Failed to check APK for company ${company.name}: ${(error as Error).message}`;
-					console.error('❌', errorMsg);
+					logger.error(errorMsg);
 					errors.push(errorMsg);
 				}
 			}
@@ -49,12 +50,17 @@ export class ApkStatusService {
 			await this.updateApkCheckDate();
 
 			const duration = Date.now() - startTime;
-			console.log(`✅ APK expiry status check completed in ${duration}ms`);
-			console.log(`📊 Summary: ${notificationsCreated} notifications created, ${errors.length} errors`);
+			logger.serviceComplete('APK expiry status check', duration, {
+				total: notificationsCreated,
+				successful: notificationsCreated,
+				failed: errors.length,
+				skipped: 0,
+				duration
+			});
 
 			return { notifications: notificationsCreated, errors };
 		} catch (error) {
-			console.error('❌ Unexpected error during APK expiry check:', error);
+			logger.error('Unexpected error during APK expiry check', { error: (error as Error).message });
 			errors.push(`Unexpected error: ${(error as Error).message}`);
 			return { notifications: notificationsCreated, errors };
 		}
@@ -87,11 +93,11 @@ export class ApkStatusService {
 		});
 
 		if (totalClients === 0) {
-			console.log(`📊 No clients with APK notifications enabled for company ${companyId}`);
+			logger.debug(`No clients with APK notifications enabled for company ${companyId}`);
 			return 0;
 		}
 
-		console.log(`📊 Processing ${totalClients} clients in batches of ${CLIENT_BATCH_SIZE} for company ${companyId}`);
+		logger.debug(`Processing ${totalClients} clients in batches of ${CLIENT_BATCH_SIZE}`, { companyId });
 
 		// Accumulate counts and vehicle IDs across all batches
 		let totalExpiredCount = 0;
@@ -103,7 +109,7 @@ export class ApkStatusService {
 		for (let skip = 0; skip < totalClients; skip += CLIENT_BATCH_SIZE) {
 			const batchNum = Math.floor(skip / CLIENT_BATCH_SIZE) + 1;
 			const totalBatches = Math.ceil(totalClients / CLIENT_BATCH_SIZE);
-			console.log(`   Processing client batch ${batchNum}/${totalBatches}...`);
+			// Process client batch silently - only log significant activity
 
 			// Get batch of client IDs
 			const enabledClientsBatch = await db.default.models.Client.find({
@@ -236,11 +242,11 @@ export class ApkStatusService {
 				expiredVehicleIds
 			);
 			notificationsCreated++;
-			console.log(`📢 Created expired APK notification for company ${companyId}: ${totalExpiredCount} vehicles (${expiredVehicleIds.length} IDs in metadata)`);
-
-			if (expiredVehicleIds.length < totalExpiredCount) {
-				console.log(`   ⚠️  Note: ${totalExpiredCount - expiredVehicleIds.length} vehicle IDs omitted from notification metadata to prevent memory issues`);
-			}
+			logger.info(`Created expired APK notification for company ${companyId}`, {
+				totalVehicles: totalExpiredCount,
+				metadataCount: expiredVehicleIds.length,
+				omitted: totalExpiredCount - expiredVehicleIds.length
+			});
 		}
 
 		if (totalExpiringCount > 0) {
@@ -250,11 +256,11 @@ export class ApkStatusService {
 				expiringVehicleIds
 			);
 			notificationsCreated++;
-			console.log(`📢 Created expiring APK notification for company ${companyId}: ${totalExpiringCount} vehicles (${expiringVehicleIds.length} IDs in metadata)`);
-
-			if (expiringVehicleIds.length < totalExpiringCount) {
-				console.log(`   ⚠️  Note: ${totalExpiringCount - expiringVehicleIds.length} vehicle IDs omitted from notification metadata to prevent memory issues`);
-			}
+			logger.info(`Created expiring APK notification for company ${companyId}`, {
+				totalVehicles: totalExpiringCount,
+				metadataCount: expiringVehicleIds.length,
+				omitted: totalExpiringCount - expiringVehicleIds.length
+			});
 		}
 
 		return notificationsCreated;
@@ -277,9 +283,9 @@ export class ApkStatusService {
 				await systemDoc.save();
 			}
 
-			console.log(`📅 APK status check date updated: ${systemDoc.lastApkStatusCheck}`);
+			logger.debug('APK status check date updated', { lastApkStatusCheck: systemDoc.lastApkStatusCheck.toISOString() });
 		} catch (error) {
-			console.error('❌ Failed to update APK status check date:', error);
+			logger.error('Failed to update APK status check date', { error: (error as Error).message });
 		}
 	}
 
@@ -287,7 +293,7 @@ export class ApkStatusService {
 	 * Run APK status check manually (for testing or admin triggers)
 	 */
 	async runManualCheck(): Promise<void> {
-		console.log('🔧 Running manual APK status check...');
+		logger.info('Running manual APK status check');
 		await this.checkApkExpiryForAllCompanies();
 	}
 }

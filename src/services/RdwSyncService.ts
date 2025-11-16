@@ -3,6 +3,7 @@
 // import { fetchRDWVehicleData, isValidDutchLicensePlate, determineFieldsToUpdate, formatDutchLicensePlate } from '../lib/rdwService';
 // import { NotificationService } from '../lib/notificationService';
 import mongoose from 'mongoose';
+import { logger } from '../lib/logger';
 
 interface PopulatedVehicle {
 	_id: mongoose.Types.ObjectId;
@@ -38,7 +39,7 @@ export class RdwSyncService {
 	 */
 	async syncAllCompaniesVehicles(force = false): Promise<{ synced: number; errors: string[]; companies: number }> {
 		const db = await import('../lib/db');
-		console.log('🚀 Starting RDW vehicle sync for all active companies...');
+		logger.info('Starting RDW vehicle sync for all active companies');
 		const startTime = Date.now();
 		const errors: string[] = [];
 		let totalSynced = 0;
@@ -53,8 +54,9 @@ export class RdwSyncService {
 					threeMonthsAgo.setDate(threeMonthsAgo.getDate() - 90); // 3 months = ~90 days
 
 					if (systemDoc.lastRdwSync > threeMonthsAgo) {
-						console.log('⏭️  Skipping RDW sync - last sync was less than 3 months ago');
-						console.log(`   Last sync: ${systemDoc.lastRdwSync}`);
+						logger.info('Skipping RDW sync - last sync was less than 3 months ago', {
+							lastSync: systemDoc.lastRdwSync.toISOString()
+						});
 						return { synced: 0, errors: [], companies: 0 };
 					}
 				}
@@ -65,7 +67,7 @@ export class RdwSyncService {
 				'serviceModules.rdwSyncEnabled': { $ne: false }
 			}).select('_id name');
 
-			console.log(`📊 Found ${activeCompanies.length} active companies`);
+			logger.info(`Found ${activeCompanies.length} active companies`);
 
 			// Process companies in parallel (up to 3 at a time to avoid overwhelming the system)
 			const COMPANY_BATCH_SIZE = 3;
@@ -79,30 +81,41 @@ export class RdwSyncService {
 					})
 				);
 
-				// Process results
+				// Process results and track company sync summary
+				let batchSynced = 0;
+				let batchErrors = 0;
+
 				results.forEach((result) => {
 					if (result.status === 'fulfilled') {
 						totalSynced += result.value.syncedCount;
 						companiesProcessed++;
-						console.log(`✅ Company ${result.value.company.name}: ${result.value.syncedCount} vehicles synced`);
+						batchSynced += result.value.syncedCount;
 					} else {
 						const errorMsg = `Failed to sync vehicles for company: ${result.reason}`;
-						console.error('❌', errorMsg);
+						logger.error(errorMsg);
 						errors.push(errorMsg);
+						batchErrors++;
 					}
 				});
+
+				logger.debug(`Company batch processed: ${batchSynced} vehicles synced, ${batchErrors} companies failed`);
 			}
 
 			// Update system sync date
 			await this.updateSystemSyncDate();
 
 			const duration = Date.now() - startTime;
-			console.log(`🎉 RDW sync completed in ${duration}ms`);
-			console.log(`📊 Summary: ${totalSynced} vehicles synced across ${companiesProcessed} companies, ${errors.length} errors`);
+			logger.serviceComplete('RDW full sync', duration, {
+				total: totalSynced,
+				successful: totalSynced,
+				failed: errors.length,
+				skipped: 0,
+				duration
+			});
 
 			return { synced: totalSynced, errors, companies: companiesProcessed };
 		} catch (error) {
-			console.error('❌ Unexpected error during RDW sync:', error);
+			logger.error('Unexpected error during RDW sync', { error: (error as Error).message });
 			errors.push(`Unexpected error: ${(error as Error).message}`);
 			return { synced: totalSynced, errors, companies: companiesProcessed };
 		}
@@ -135,7 +148,13 @@ export class RdwSyncService {
 		                    totalVehicles > 5000  ? 1500 :
 		                    totalVehicles > 1000  ? 1000 : 500;
 
-		console.log(`Processing ${totalVehicles} vehicles in pages of ${PAGE_SIZE}, batches of ${BATCH_SIZE} (delay: ${BATCH_DELAY}ms)`);
+		logger.debug(`Processing company vehicles`, {
+			companyId,
+			totalVehicles,
+			pageSize: PAGE_SIZE,
+			batchSize: BATCH_SIZE,
+			batchDelay: BATCH_DELAY
+		});
 
 		// Process vehicles in pages to avoid loading all into memory
 		for (let page = 0; page < Math.ceil(totalVehicles / PAGE_SIZE); page++) {
@@ -157,21 +176,28 @@ export class RdwSyncService {
 				const batchNumber = Math.floor(overallProgress / BATCH_SIZE) + 1;
 				const totalBatches = Math.ceil(totalVehicles / BATCH_SIZE);
 
-				console.log(`   Processing batch ${batchNumber}/${totalBatches}...`);
+				// Track batch statistics for summary logging
+				let batchProcessed = 0;
+				let batchUpdated = 0;
+				let batchSkipped = 0;
+				let batchErrors = 0;
+				const batchErrorDetails: string[] = [];
 
-					// Process batch in parallel
+				// Process batch in parallel
 				const batchResults = await Promise.allSettled(
 					batch.map(async (vehicle) => {
 						try {
+							batchProcessed++;
+
 							// Skip if no license plate
 							if (!vehicle.license_plate) {
-								console.log(`⚠️  Skipping vehicle with no license plate: ${vehicle._id}`);
+								batchSkipped++;
 								return { synced: false, reason: 'no_license_plate' };
 							}
 
 							// Validate Dutch license plate format
 							if (!isValidDutchLicensePlate(vehicle.license_plate)) {
-								console.log(`⚠️  Skipping invalid license plate: ${vehicle.license_plate}`);
+								batchSkipped++;
 								return { synced: false, reason: 'invalid_plate' };
 							}
 
@@ -181,6 +207,7 @@ export class RdwSyncService {
 								fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
 
 								if (vehicle.last_rdw_sync > fourWeeksAgo) {
+									batchSkipped++;
 									return { synced: false, reason: 'recently_synced' };
 								}
 							}
@@ -189,7 +216,7 @@ export class RdwSyncService {
 							const rdwData = await fetchRDWVehicleData(vehicle.license_plate);
 
 							if (!rdwData) {
-								console.log(`⚠️  No RDW data found for license plate: ${vehicle.license_plate}`);
+								batchSkipped++;
 								return { synced: false, reason: 'no_data' };
 							}
 
@@ -214,6 +241,7 @@ export class RdwSyncService {
 									{ $set: updates }
 								);
 
+								batchUpdated++;
 								return { synced: true, updated: true };
 							} else {
 								// Even if no updates, update the sync date
@@ -225,7 +253,9 @@ export class RdwSyncService {
 								return { synced: true, updated: false };
 							}
 						} catch (error) {
-							console.error(`❌ Error syncing vehicle ${vehicle.license_plate}:`, (error as Error).message);
+							batchErrors++;
+							const errorMsg = `Error syncing vehicle ${vehicle.license_plate}: ${(error as Error).message}`;
+							batchErrorDetails.push(errorMsg);
 							return { synced: false, reason: 'error', error: (error as Error).message };
 						}
 					})
@@ -238,9 +268,22 @@ export class RdwSyncService {
 					}
 				});
 
+				// Log batch progress for large operations
+				logger.batchProgress('RDW vehicle sync', overallProgress + batch.length, totalVehicles, BATCH_SIZE);
+
+				// Log batch summary if there were errors or significant activity
+				if (batchErrors > 0 || batchUpdated > 0) {
+					logger.summary(`RDW batch ${batchNumber}/${totalBatches}`, {
+						total: batch.length,
+						successful: batchUpdated,
+						failed: batchErrors,
+						skipped: batchSkipped,
+						errors: batchErrors > 0 ? batchErrorDetails : undefined
+					});
+				}
+
 				// Delay between batches (except for the last batch)
 				if (i + BATCH_SIZE < vehicles.length || page < Math.ceil(totalVehicles / PAGE_SIZE) - 1) {
-					console.log(`   Waiting ${BATCH_DELAY}ms before next batch...`);
 					await this.delay(BATCH_DELAY);
 				}
 			}
@@ -267,9 +310,9 @@ export class RdwSyncService {
 				await systemDoc.save();
 			}
 
-			console.log(`📅 System sync date updated: ${systemDoc.lastRdwSync}`);
+			logger.debug('System sync date updated', { lastRdwSync: systemDoc.lastRdwSync.toISOString() });
 		} catch (error) {
-			console.error('❌ Failed to update system sync date:', error);
+			logger.error('Failed to update system sync date', { error: (error as Error).message });
 		}
 	}
 
@@ -293,7 +336,7 @@ export class RdwSyncService {
 		const { fetchRDWVehicleData, isValidDutchLicensePlate, determineFieldsToUpdate, formatDutchLicensePlate } = await import('../lib/rdwService');
 		const { NotificationService } = await import('../lib/notificationService');
 
-		console.log('🚀 Starting daily RDW sync for expired/expiring vehicles...');
+		logger.info('Starting daily RDW sync for expired/expiring vehicles');
 		const startTime = Date.now();
 		const errors: string[] = [];
 		let totalSynced = 0;
@@ -323,10 +366,10 @@ export class RdwSyncService {
 				.lean();
 
 			totalVehiclesFound = criticalVehicles.length;
-			console.log(`📊 Found ${totalVehiclesFound} vehicles with expired or expiring APK`);
+			logger.info(`Found ${totalVehiclesFound} vehicles with expired or expiring APK`);
 
 			if (totalVehiclesFound === 0) {
-				console.log('✅ No vehicles need syncing');
+				logger.debug('No vehicles need syncing');
 				return { synced: 0, errors: [], totalVehicles: 0 };
 			}
 
@@ -339,14 +382,22 @@ export class RdwSyncService {
 			                    totalVehiclesFound > 1000 ? 1500 :
 			                    totalVehiclesFound > 500  ? 1000 : 500;
 
-			console.log(`   Using adaptive batching: ${BATCH_SIZE} vehicles per batch, ${BATCH_DELAY}ms delay`);
+			logger.debug(`Using adaptive batching for critical vehicles`, {
+				batchSize: BATCH_SIZE,
+				batchDelay: BATCH_DELAY,
+				totalVehicles: totalVehiclesFound
+			});
 
 			for (let i = 0; i < criticalVehicles.length; i += BATCH_SIZE) {
 				const batch = criticalVehicles.slice(i, i + BATCH_SIZE);
 				const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
 				const totalBatches = Math.ceil(criticalVehicles.length / BATCH_SIZE);
 
-				console.log(`   Processing batch ${batchNumber}/${totalBatches} (${batch.length} vehicles)...`);
+				// Track batch statistics for summary logging
+				let batchUpdated = 0;
+				let batchSkipped = 0;
+				let batchErrors = 0;
+				const batchErrorDetails: string[] = [];
 
 				// Process batch in parallel
 				const batchResults = await Promise.allSettled(
@@ -354,13 +405,13 @@ export class RdwSyncService {
 						try {
 							// Skip if no license plate
 							if (!vehicle.license_plate) {
-								console.log(`⚠️  Skipping vehicle with no license plate: ${vehicle._id}`);
+								batchSkipped++;
 								return { synced: false, reason: 'no_license_plate' };
 							}
 
 							// Validate Dutch license plate format
 							if (!isValidDutchLicensePlate(vehicle.license_plate)) {
-								console.log(`⚠️  Skipping invalid license plate: ${vehicle.license_plate}`);
+								batchSkipped++;
 								return { synced: false, reason: 'invalid_plate' };
 							}
 
@@ -368,7 +419,7 @@ export class RdwSyncService {
 							const rdwData = await fetchRDWVehicleData(vehicle.license_plate);
 
 							if (!rdwData) {
-								console.log(`⚠️  No RDW data found for license plate: ${vehicle.license_plate}`);
+								batchSkipped++;
 								return { synced: false, reason: 'no_data' };
 							}
 
@@ -393,7 +444,7 @@ export class RdwSyncService {
 									{ $set: updates }
 								);
 
-								console.log(`✅ Updated ${vehicle.license_plate}: ${Object.keys(updates).join(', ')}`);
+								batchUpdated++;
 								return { synced: true, updated: true };
 							} else {
 								// Even if no updates, update the sync date
@@ -405,9 +456,9 @@ export class RdwSyncService {
 								return { synced: true, updated: false };
 							}
 						} catch (error) {
+							batchErrors++;
 							const errorMsg = `Error syncing vehicle ${vehicle.license_plate}: ${(error as Error).message}`;
-							console.error(`❌ ${errorMsg}`);
-							errors.push(errorMsg);
+							batchErrorDetails.push(errorMsg);
 							return { synced: false, reason: 'error', error: (error as Error).message };
 						}
 					})
@@ -420,20 +471,38 @@ export class RdwSyncService {
 					}
 				});
 
+				// Log batch progress for large operations
+				logger.batchProgress('RDW critical vehicle sync', i + batch.length, totalVehiclesFound, BATCH_SIZE);
+
+				// Log batch summary if there were errors or significant activity
+				if (batchErrors > 0 || batchUpdated > 0) {
+					logger.summary(`RDW critical batch ${batchNumber}/${totalBatches}`, {
+						total: batch.length,
+						successful: batchUpdated,
+						failed: batchErrors,
+						skipped: batchSkipped,
+						errors: batchErrors > 0 ? batchErrorDetails : undefined
+					});
+				}
+
 				// Delay between batches (except for the last batch)
 				if (i + BATCH_SIZE < criticalVehicles.length) {
-					console.log(`   Waiting ${BATCH_DELAY}ms before next batch...`);
 					await this.delay(BATCH_DELAY);
 				}
 			}
 
 			const duration = Date.now() - startTime;
-			console.log(`🎉 Daily expired/expiring vehicle sync completed in ${duration}ms`);
-			console.log(`📊 Summary: ${totalSynced} vehicles synced, ${errors.length} errors`);
+			logger.serviceComplete('RDW daily critical sync', duration, {
+				total: totalVehiclesFound,
+				successful: totalSynced,
+				failed: errors.length,
+				skipped: 0,
+				duration
+			});
 
 			return { synced: totalSynced, errors, totalVehicles: totalVehiclesFound };
 		} catch (error) {
-			console.error('❌ Unexpected error during daily expired/expiring vehicle sync:', error);
+			logger.error('Unexpected error during daily expired/expiring vehicle sync', { error: (error as Error).message });
 			errors.push(`Unexpected error: ${(error as Error).message}`);
 			return { synced: totalSynced, errors, totalVehicles: totalVehiclesFound };
 		}
@@ -468,7 +537,7 @@ export class RdwSyncService {
 				if (client) {
 					// Skip notification if client has notifications disabled
 					if (client.apkNotificationsDisabled === true) {
-						console.log(`⏭️  Skipping tenaamstelling notification for ${vehicle.license_plate} - client has notifications disabled`);
+						logger.debug(`Skipping tenaamstelling notification for ${vehicle.license_plate} - client has notifications disabled`);
 						return;
 					}
 
@@ -496,7 +565,10 @@ export class RdwSyncService {
 			updates.lastTenaamstellingNotified = new Date();
 			updates.tenaamstellingNotificationDismissed = false;
 		} catch (notificationError) {
-			console.error(`❌ Failed to create tenaamstelling notification for ${vehicle.license_plate}:`, (notificationError as Error).message);
+			logger.error(`Failed to create tenaamstelling notification for ${vehicle.license_plate}`, {
+				error: (notificationError as Error).message,
+				licensePlate: vehicle.license_plate
+			});
 		}
 	}
 
@@ -511,7 +583,7 @@ export class RdwSyncService {
 	 * Run sync manually (for testing or admin triggers)
 	 */
 	async runManualSync(): Promise<void> {
-		console.log('🔧 Running manual RDW sync...');
+		logger.info('Running manual RDW sync');
 		await this.syncAllCompaniesVehicles();
 	}
 }

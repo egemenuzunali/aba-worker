@@ -5,6 +5,7 @@
 import { StatusUpdateScheduler } from '../services/StatusUpdateScheduler';
 import db from './db';
 import { runTestSync } from './testSync';
+import { logger } from './logger';
 
 // Store interval and timeout references for cleanup
 const intervals: NodeJS.Timeout[] = [];
@@ -12,7 +13,7 @@ const timeouts: NodeJS.Timeout[] = [];
 
 // Cleanup function to clear all intervals and timeouts
 async function cleanup() {
-	console.log('🧹 Cleaning up intervals and timeouts...');
+	logger.info('Cleaning up intervals and timeouts');
 	// Stop the scheduler
 	const scheduler = StatusUpdateScheduler.getInstance();
 	scheduler.stopScheduler();
@@ -21,7 +22,7 @@ async function cleanup() {
 	timeouts.forEach(clearTimeout);
 	intervals.length = 0;
 	timeouts.length = 0;
-	console.log('✅ Cleanup completed');
+	logger.info('Cleanup completed');
 }
 
 // Add process termination handlers
@@ -41,9 +42,9 @@ export async function boot() {
 		const scheduler = StatusUpdateScheduler.getInstance();
 		scheduler.startScheduler();
 
-		console.log('🚀 ABA Worker microservice initialized with scheduled tasks');
+		logger.info('ABA Worker microservice initialized with scheduled tasks');
 	} catch (error) {
-		console.error('❌ Failed to initialize ABA Worker:', error);
+		logger.error('Failed to initialize ABA Worker', { error: (error as Error).message });
 		throw error;
 	}
 }

@@ -3,6 +3,7 @@
  */
 
 import { rdwApiKey, rdwBaseUrl } from './config';
+import { logger } from './logger';
 
 export interface RDWVehicleData {
 	brand?: string;
@@ -98,7 +99,7 @@ export function isValidDutchLicensePlate(licensePlate: string): boolean {
  */
 export async function fetchRDWVehicleData(licensePlate: string): Promise<RDWVehicleData | null> {
 	try {
-		console.log(`🔍 Fetching RDW data for license plate: ${licensePlate}`);
+		logger.debug(`Fetching RDW data for license plate: ${licensePlate}`);
 
 		// Use real RDW API if API key is configured
 		if (rdwApiKey) {
@@ -112,7 +113,7 @@ export async function fetchRDWVehicleData(licensePlate: string): Promise<RDWVehi
 
 			if (!response.ok) {
 				if (response.status === 404) {
-					console.log(`ℹ️  No RDW data found for license plate: ${licensePlate}`);
+					logger.debug(`No RDW data found for license plate: ${licensePlate}`);
 					return null;
 				}
 				throw new Error(`RDW API responded with status: ${response.status}`);
@@ -140,7 +141,7 @@ export async function fetchRDWVehicleData(licensePlate: string): Promise<RDWVehi
 			};
 		} else {
 			// Fallback to mock data when no API key is configured
-			console.log('⚠️  Using mock RDW data (no API key configured)');
+			logger.debug('Using mock RDW data (no API key configured)');
 			return {
 				brand: 'Mock Brand',
 				model: 'Mock Model',
@@ -153,7 +154,7 @@ export async function fetchRDWVehicleData(licensePlate: string): Promise<RDWVehi
 			};
 		}
 	} catch (error) {
-		console.error(`❌ Error fetching RDW data for ${licensePlate}:`, error);
+		logger.error(`Error fetching RDW data for ${licensePlate}`, { error: (error as Error).message });
 		return null;
 	}
 }
