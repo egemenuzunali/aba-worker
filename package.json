@@ -12,10 +12,11 @@
 		"start": "ts-node -r tsconfig-paths/register src/index.ts",
 		"build": "tsc"
 	},
-	"author": "Concept Team Gemeente Amsterdam <conceptteam@amsterdam.nl>",
+	"author": "Egemen Uzunali <info@autobedrijfadministratie.nl>",
 	"license": "ISC",
 	"devDependencies": {
 		"@types/cors": "^2.8.14",
+		"@types/express": "^5.0.5",
 		"@types/jest": "^29.5.11",
 		"@types/node": "^20.0.0",
 		"@types/node-cron": "^3.0.0",
@@ -35,7 +36,6 @@
 	},
 	"dependencies": {
 		"axios": "^1.6.0",
-		"body-parser": "^1.20.2",
 		"cors": "^2.8.5",
 		"date-fns": "^3.0.0",
 		"dotenv": "^16.3.1",
