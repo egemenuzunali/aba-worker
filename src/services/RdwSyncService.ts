@@ -277,10 +277,16 @@ export class RdwSyncService {
 	/**
 	 * Sync only expired and expiring vehicles with RDW data (runs daily)
 	 *
-	 * PERFORMANCE NOTE: This sync is designed to handle fleets up to ~60,000 vehicles safely.
-	 * At 60k vehicles, the 80-day window contains ~9,000 vehicles, which is under the 10k/day RDW API limit.
-	 * Beyond 60k vehicles, consider reducing the notification window (e.g., 80 days → 60 days) or
-	 * implementing tiered daily sync (0-14 days daily, 15-80 days weekly).
+	 * Syncs vehicles within a rolling 160-day window:
+	 * - Expired within last 80 days (likely getting renewed soon)
+	 * - Expiring within next 80 days (notification window)
+	 *
+	 * PERFORMANCE NOTE: This sync is designed to handle fleets up to ~200,000 vehicles safely.
+	 * With a typical APK cycle of 1 year, the 160-day window contains ~4% of fleet.
+	 * Examples:
+	 * - 10,000 vehicles: ~400 calls/day
+	 * - 50,000 vehicles: ~2,000 calls/day
+	 * - 200,000 vehicles: ~8,000 calls/day (under 10k RDW API limit)
 	 */
 	async syncExpiredAndExpiringVehicles(): Promise<{ synced: number; errors: string[]; totalVehicles: number }> {
 		const db = await import('../lib/db');
@@ -296,31 +302,22 @@ export class RdwSyncService {
 		try {
 			const today = new Date();
 			const eightyDaysFromNow = new Date();
-			eightyDaysFromNow.setDate(today.getDate() + 80); // 80 days (updated from 30)
-			const twoYearsAgo = new Date();
-			twoYearsAgo.setFullYear(today.getFullYear() - 2); // 2 years ago
+			eightyDaysFromNow.setDate(today.getDate() + 80); // Future: expiring within 80 days
+			const eightyDaysAgo = new Date();
+			eightyDaysAgo.setDate(today.getDate() - 80); // Past: expired within last 80 days
 
-			// Find all vehicles with expired or expiring APK
+			// Find ONLY vehicles with APK expired/expiring within 80-day window (past or future)
+			// This creates a rolling 160-day window (-80 to +80 days from today)
+			// Vehicles outside this window are excluded - they will be caught by the
+			// full sync (every 3 months) which updates all vehicle data periodically
 			// Only select fields needed for sync - no population to reduce memory usage
 			const criticalVehicles = await db.default.models.Vehicle.find({
 				deleted: { $ne: true },
 				license_plate: { $exists: true, $nin: [null, ''] },
-				$or: [
-					{
-						// Expired APK (within last 2 years)
-						apk_expiry: {
-							$lt: today,
-							$gte: twoYearsAgo
-						}
-					},
-					{
-						// Expiring within 80 days
-						apk_expiry: {
-							$gte: today,
-							$lte: eightyDaysFromNow
-						}
-					}
-				]
+				apk_expiry: {
+					$gte: eightyDaysAgo,  // Expired within last 80 days (likely getting renewed)
+					$lte: eightyDaysFromNow  // Expiring within next 80 days (notification window)
+				}
 			})
 				.select('_id license_plate companyId last_rdw_sync apk_expiry clientId datum_tenaamstelling')
 				.lean();
