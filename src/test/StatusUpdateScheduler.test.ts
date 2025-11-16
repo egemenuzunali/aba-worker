@@ -22,8 +22,15 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 	});
 
 	describe('updateExpiredQuotes - Processed Date Tracking', () => {
-		it('should only process quotes expired after lastExpiryCheckDate', async () => {
-			// Create test companies with different last check dates
+		it('should only process quotes expired after lastExpiryCheckDate (system-wide)', async () => {
+			// Set system-wide last check date
+			await db.models.System.create({
+				lastQuoteExpiryCheck: new Date('2024-01-10'),
+				lastInvoiceExpiryCheck: new Date('2024-01-10'),
+				lastPurchaseInvoiceExpiryCheck: new Date('2024-01-10')
+			});
+
+			// Create test companies
 			const company1 = await db.models.Company.create({
 				name: 'Company 1',
 				email: 'company1@test.com',
@@ -33,8 +40,7 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 				serviceModules: {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-10') // Last checked Jan 10
+					rdwSyncEnabled: true
 				}
 			});
 
@@ -47,8 +53,7 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 				serviceModules: {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-15') // Last checked Jan 15
+					rdwSyncEnabled: true
 				}
 			});
 
@@ -70,9 +75,7 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 			});
 
 			// Create quotes with different expiration dates
-			const now = new Date();
-
-			// Quote expired on Jan 5 (before company1's last check) - should NOT be processed
+			// Quote expired on Jan 5 (before system last check on Jan 10) - should NOT be processed
 			await db.models.Quote.create({
 				quote_number: 1,
 				clientId: client1._id,
@@ -82,7 +85,7 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 				total_incl_vat: 100
 			});
 
-			// Quote expired on Jan 12 (after company1's last check) - should be processed
+			// Quote expired on Jan 12 (after system last check) - should be processed
 			await db.models.Quote.create({
 				quote_number: 2,
 				clientId: client1._id,
@@ -92,7 +95,7 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 				total_incl_vat: 200
 			});
 
-			// Quote expired on Jan 20 (after company2's last check) - should be processed
+			// Quote expired on Jan 20 (after system last check) - should be processed
 			await db.models.Quote.create({
 				quote_number: 3,
 				clientId: client2._id,
@@ -120,7 +123,6 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 			expect(result.errors).toHaveLength(0);
 
 			// Verify only quotes 2 and 3 were newly marked as expired
-			// Quote 4 was already expired and should not be counted as updated
 			const newlyExpiredQuotes = await db.models.Quote.find({
 				status: QUOTE_STATUS.EXPIRED,
 				quote_number: { $in: [2, 3] }
@@ -134,19 +136,13 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 			});
 			expect(alreadyExpiredQuote).toBeTruthy();
 
-			// Verify lastExpiryCheckDate was updated for both companies
-			const updatedCompany1 = await db.models.Company.findById(company1._id);
-			const updatedCompany2 = await db.models.Company.findById(company2._id);
-
-			expect(updatedCompany1?.serviceModules?.lastExpiryCheckDate).toBeDefined();
-			expect(updatedCompany2?.serviceModules?.lastExpiryCheckDate).toBeDefined();
+			// Verify system-wide lastQuoteExpiryCheck was updated
+			const updatedSystem = await db.models.System.findOne();
+			expect(updatedSystem?.lastQuoteExpiryCheck).toBeDefined();
 
 			// Last check date should be recent (within last minute)
 			const oneMinuteAgo = new Date(Date.now() - 60000);
-			expect(new Date(updatedCompany1!.serviceModules!.lastExpiryCheckDate!)).toBeInstanceOf(Date);
-			expect(new Date(updatedCompany1!.serviceModules!.lastExpiryCheckDate!).getTime()).toBeGreaterThan(oneMinuteAgo.getTime());
-			expect(new Date(updatedCompany2!.serviceModules!.lastExpiryCheckDate!)).toBeInstanceOf(Date);
-			expect(new Date(updatedCompany2!.serviceModules!.lastExpiryCheckDate!).getTime()).toBeGreaterThan(oneMinuteAgo.getTime());
+			expect(new Date(updatedSystem!.lastQuoteExpiryCheck!).getTime()).toBeGreaterThan(oneMinuteAgo.getTime());
 		});
 
 		it('should skip companies without invoice status checking enabled', async () => {
@@ -194,8 +190,10 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 			expect(quote?.status).toBe(QUOTE_STATUS.CONCEPT);
 		});
 
-		it('should handle companies without lastExpiryCheckDate gracefully', async () => {
-			// Create company without lastExpiryCheckDate field
+		it('should handle missing system lastExpiryCheckDate gracefully', async () => {
+			// No System document exists - should use default date (2020-01-01)
+
+			// Create company
 			const company = await db.models.Company.create({
 				name: 'Company No Date',
 				email: 'nodate@test.com',
@@ -206,7 +204,6 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
 					rdwSyncEnabled: true
-					// lastExpiryCheckDate is missing
 				}
 			});
 
@@ -234,14 +231,21 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 			// Should process the quote (since 2024-01-10 is after 2020-01-01)
 			expect(result.updated).toBe(1);
 
-			// Should have set lastExpiryCheckDate
-			const updatedCompany = await db.models.Company.findById(company._id);
-			expect(updatedCompany?.serviceModules?.lastExpiryCheckDate).toBeDefined();
+			// Should have created System document with lastQuoteExpiryCheck
+			const systemDoc = await db.models.System.findOne();
+			expect(systemDoc?.lastQuoteExpiryCheck).toBeDefined();
 		});
 	});
 
 	describe('updateExpiredInvoices - Processed Date Tracking', () => {
 		it('should only process invoices expired after lastExpiryCheckDate and unpaid', async () => {
+			// Set system-wide last check date
+			await db.models.System.create({
+				lastQuoteExpiryCheck: new Date('2024-01-10'),
+				lastInvoiceExpiryCheck: new Date('2024-01-10'),
+				lastPurchaseInvoiceExpiryCheck: new Date('2024-01-10')
+			});
+
 			// Create test company
 			const company = await db.models.Company.create({
 				name: 'Test Company',
@@ -252,8 +256,7 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 				serviceModules: {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-10')
+					rdwSyncEnabled: true
 				}
 			});
 
@@ -319,11 +322,26 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 			const inv3 = await db.models.Invoice.findOne({ invoice_number: 3 });
 			expect(inv1?.status).toBe(INVOICE_STATUS.OPEN);
 			expect(inv3?.status).toBe(INVOICE_STATUS.OPEN);
+
+			// Verify system-wide lastInvoiceExpiryCheck was updated
+			const updatedSystem = await db.models.System.findOne();
+			expect(updatedSystem?.lastInvoiceExpiryCheck).toBeDefined();
+
+			// Last check date should be recent (within last minute)
+			const oneMinuteAgo = new Date(Date.now() - 60000);
+			expect(new Date(updatedSystem!.lastInvoiceExpiryCheck!).getTime()).toBeGreaterThan(oneMinuteAgo.getTime());
 		});
 	});
 
 	describe('updateExpiredPurchaseInvoices - Processed Date Tracking', () => {
 		it('should only process purchase invoices expired after lastExpiryCheckDate and unpaid', async () => {
+			// Set system-wide last check date
+			await db.models.System.create({
+				lastQuoteExpiryCheck: new Date('2024-01-10'),
+				lastInvoiceExpiryCheck: new Date('2024-01-10'),
+				lastPurchaseInvoiceExpiryCheck: new Date('2024-01-10')
+			});
+
 			// Create test company
 			const company = await db.models.Company.create({
 				name: 'Test Company',
@@ -334,8 +352,7 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 				serviceModules: {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-10')
+					rdwSyncEnabled: true
 				}
 			});
 
@@ -389,23 +406,30 @@ describe('StatusUpdateScheduler - Processed Date Tracking', () => {
 			const allInvoices = await db.models.PurchaseInvoice.find({});
 			const openInvoices = allInvoices.filter(inv => inv.status === PURCHASE_INVOICE_STATUS.OPEN);
 			expect(openInvoices).toHaveLength(2); // The other two should still be OPEN
+
+			// Verify system-wide lastPurchaseInvoiceExpiryCheck was updated
+			const updatedSystem = await db.models.System.findOne();
+			expect(updatedSystem?.lastPurchaseInvoiceExpiryCheck).toBeDefined();
+
+			// Last check date should be recent (within last minute)
+			const oneMinuteAgo = new Date(Date.now() - 60000);
+			expect(new Date(updatedSystem!.lastPurchaseInvoiceExpiryCheck!).getTime()).toBeGreaterThan(oneMinuteAgo.getTime());
 		});
 	});
 
 	describe('Error Handling', () => {
 		it('should handle database errors gracefully', async () => {
-			// Create company with invalid serviceModules structure
+			// Create company
 			await db.models.Company.create({
-				name: 'Invalid Company',
-				email: 'invalid@test.com',
+				name: 'Test Company',
+				email: 'test@test.com',
 				phone_number: '1234567890',
 				business: { vat_number: 'NL123456789', kvk_number: '12345678', iban: 'NL00ABNA0123456789' },
 				address: { street: 'Teststraat', house_number: '1', postal_code: '1234AB', city: 'Teststad' },
 				serviceModules: {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-01')
+					rdwSyncEnabled: true
 				}
 			});
 

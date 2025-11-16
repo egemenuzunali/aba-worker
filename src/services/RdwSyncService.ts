@@ -322,11 +322,7 @@ export class RdwSyncService {
 		const totalClients = await db.default.models.Client.countDocuments({
 			companyId: new mongoose.Types.ObjectId(companyId),
 			deleted: { $ne: true },
-			$or: [
-				{ apkNotificationsDisabled: false },
-				{ apkNotificationsDisabled: { $exists: false } },
-				{ apkNotificationsDisabled: null }
-			]
+			apkNotificationsDisabled: { $ne: true }
 		});
 
 		if (totalClients === 0) {
@@ -352,11 +348,7 @@ export class RdwSyncService {
 			const enabledClientsBatch = await db.default.models.Client.find({
 				companyId: new mongoose.Types.ObjectId(companyId),
 				deleted: { $ne: true },
-				$or: [
-					{ apkNotificationsDisabled: false },
-					{ apkNotificationsDisabled: { $exists: false } },
-					{ apkNotificationsDisabled: null }
-				]
+				apkNotificationsDisabled: { $ne: true }
 			})
 				.select('_id')
 				.skip(skip)

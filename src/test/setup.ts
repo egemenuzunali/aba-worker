@@ -1,7 +1,7 @@
 // Test setup file for Jest in aba-worker
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
-import { Vehicle, Company, Client, System, Quote, Invoice, PurchaseInvoice } from '../models';
+import { Vehicle, Company, Client, System, Quote, Invoice, PurchaseInvoice, Notification } from '../models';
 
 let mongoServer: MongoMemoryServer;
 
@@ -15,7 +15,8 @@ jest.mock('../lib/db', () => ({
 		System,
 		Quote,
 		Invoice,
-		PurchaseInvoice
+		PurchaseInvoice,
+		Notification
 	}
 }));
 
