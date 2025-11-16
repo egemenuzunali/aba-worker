@@ -35,7 +35,7 @@ async function startServer() {
 		bodyParser.json(),
 	);
 
-	app.get('/health', async (req, res) => {
+	app.get('/health', async (req: express.Request, res: express.Response) => {
 		try {
 			// Check database connectivity
 			const dbHealth = {
@@ -79,7 +79,7 @@ async function startServer() {
 	});
 
 	// Metrics endpoint for monitoring
-	app.get('/metrics', (req, res) => {
+	app.get('/metrics', (req: express.Request, res: express.Response) => {
 		const metrics = {
 			uptime: process.uptime(),
 			memory: {

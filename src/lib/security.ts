@@ -3,7 +3,7 @@ import express from 'express';
 
 export function setupSecurity(app: express.Application) {
 	// Security headers
-	app.use((req, res, next) => {
+	app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
 		// Prevent clickjacking
 		res.setHeader('X-Frame-Options', 'DENY');
 
