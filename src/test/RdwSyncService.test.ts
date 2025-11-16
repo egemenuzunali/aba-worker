@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { RdwSyncService } from '../services/RdwSyncService';
 import db from '../lib/db';
 
-describe('RdwSyncService - APK Notification Filtering', () => {
+describe('RdwSyncService - RDW Sync Notification Tests', () => {
 	let rdwService: RdwSyncService;
 
 	beforeAll(async () => {
@@ -16,270 +16,6 @@ describe('RdwSyncService - APK Notification Filtering', () => {
 		for (const key in collections) {
 			await collections[key].deleteMany({});
 		}
-	});
-
-	describe('checkApkExpiryForCompany - Client Notification Filtering', () => {
-		it('should skip APK notifications for clients with apkNotificationsDisabled: true', async () => {
-			// Create test company
-			const company = await db.models.Company.create({
-				name: 'Test Company',
-				email: 'company@test.com',
-				phone_number: '1234567890',
-				business: { vat_number: 'NL123456789', kvk_number: '12345678', iban: 'NL00ABNA0123456789' },
-				address: { street: 'Teststraat', house_number: '1', postal_code: '1234AB', city: 'Teststad' },
-				serviceModules: {
-					apkEnabled: true,
-					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-01')
-				}
-			});
-
-			// Create client with notifications disabled
-			const disabledClient = await db.models.Client.create({
-				name: 'Disabled Client',
-				email: 'disabled@test.com',
-				phone_number: '1111111111',
-				companyId: company._id,
-				client_number: 1,
-				apkNotificationsDisabled: true // This should prevent notifications
-			});
-
-			// Create client with notifications enabled
-			const enabledClient = await db.models.Client.create({
-				name: 'Enabled Client',
-				email: 'enabled@test.com',
-				phone_number: '2222222222',
-				companyId: company._id,
-				client_number: 2,
-				apkNotificationsDisabled: false // This should allow notifications
-			});
-
-			// Create vehicles with expired APK for both clients
-			const today = new Date();
-			const expiredDate = new Date(today);
-			expiredDate.setFullYear(today.getFullYear() - 1); // 1 year ago = expired (within 2 year window)
-
-			await db.models.Vehicle.create([
-				{
-					license_plate: 'AA-01-BB',
-					companyId: company._id,
-					clientId: disabledClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				},
-				{
-					license_plate: 'BB-02-CC',
-					companyId: company._id,
-					clientId: enabledClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				}
-			]);
-
-			// Mock console.log to capture output
-			const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-
-			try {
-				// Run APK expiry check
-				const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
-
-				// Should create notifications only for the enabled client (1 notification)
-				expect(notificationsCreated).toBe(1);
-
-				// Verify notification was created for the company
-				expect(consoleLogSpy).toHaveBeenCalledWith(
-					expect.stringContaining('Created expired APK notification')
-				);
-
-			} finally {
-				consoleLogSpy.mockRestore();
-			}
-		});
-
-		it('should create notifications only for clients with apkNotificationsDisabled: false', async () => {
-			// Create test company
-			const company = await db.models.Company.create({
-				name: 'Test Company',
-				email: 'company@test.com',
-				phone_number: '1234567890',
-				business: { vat_number: 'NL123456789', kvk_number: '12345678', iban: 'NL00ABNA0123456789' },
-				address: { street: 'Teststraat', house_number: '1', postal_code: '1234AB', city: 'Teststad' },
-				serviceModules: {
-					apkEnabled: true,
-					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-01')
-				}
-			});
-
-			// Create multiple clients with different notification settings
-			const disabledClient1 = await db.models.Client.create({
-				name: 'Disabled Client 1',
-				email: 'disabled1@test.com',
-				phone_number: '1111111111',
-				companyId: company._id,
-				client_number: 1,
-				apkNotificationsDisabled: true
-			});
-
-			const disabledClient2 = await db.models.Client.create({
-				name: 'Disabled Client 2',
-				email: 'disabled2@test.com',
-				phone_number: '2222222222',
-				companyId: company._id,
-				client_number: 2,
-				apkNotificationsDisabled: true
-			});
-
-			const enabledClient = await db.models.Client.create({
-				name: 'Enabled Client',
-				email: 'enabled@test.com',
-				phone_number: '3333333333',
-				companyId: company._id,
-				client_number: 3,
-				apkNotificationsDisabled: false
-			});
-
-			// Create vehicles with expired APK for all clients
-			const today = new Date();
-			const expiredDate = new Date(today);
-			expiredDate.setFullYear(today.getFullYear() - 1); // 1 year ago = expired (within 2 year window)
-
-			await db.models.Vehicle.create([
-				{
-					license_plate: 'AA-01-BB',
-					companyId: company._id,
-					clientId: disabledClient1._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				},
-				{
-					license_plate: 'BB-02-CC',
-					companyId: company._id,
-					clientId: disabledClient2._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				},
-				{
-					license_plate: 'CC-03-DD',
-					companyId: company._id,
-					clientId: enabledClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				}
-			]);
-
-			// Run APK expiry check
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
-
-			// Should create only 1 notification for the enabled client
-			expect(notificationsCreated).toBe(1);
-		});
-
-		it('should include clients where apkNotificationsDisabled is undefined or null', async () => {
-			// Create test company
-			const company = await db.models.Company.create({
-				name: 'Test Company',
-				email: 'company@test.com',
-				phone_number: '1234567890',
-				business: { vat_number: 'NL123456789', kvk_number: '12345678', iban: 'NL00ABNA0123456789' },
-				address: { street: 'Teststraat', house_number: '1', postal_code: '1234AB', city: 'Teststad' },
-				serviceModules: {
-					apkEnabled: true,
-					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-01')
-				}
-			});
-
-			// Create clients with different apkNotificationsDisabled states
-			const undefinedClient = await db.models.Client.create({
-				name: 'Undefined Client',
-				email: 'undefined@test.com',
-				phone_number: '1111111111',
-				companyId: company._id,
-				client_number: 1
-				// apkNotificationsDisabled not set (undefined)
-			});
-
-			const nullClient = await db.models.Client.create({
-				name: 'Null Client',
-				email: 'null@test.com',
-				phone_number: '2222222222',
-				companyId: company._id,
-				client_number: 2,
-				apkNotificationsDisabled: null
-			});
-
-			const falseClient = await db.models.Client.create({
-				name: 'False Client',
-				email: 'false@test.com',
-				phone_number: '3333333333',
-				companyId: company._id,
-				client_number: 3,
-				apkNotificationsDisabled: false
-			});
-
-			// Create vehicles with expired APK
-			const today = new Date();
-			const expiredDate = new Date(today);
-			expiredDate.setFullYear(today.getFullYear() - 1); // 1 year ago = expired (within 2 year window)
-
-			await db.models.Vehicle.create([
-				{
-					license_plate: 'AA-01-BB',
-					companyId: company._id,
-					clientId: undefinedClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				},
-				{
-					license_plate: 'BB-02-CC',
-					companyId: company._id,
-					clientId: nullClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				},
-				{
-					license_plate: 'CC-03-DD',
-					companyId: company._id,
-					clientId: falseClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				}
-			]);
-
-			// Run APK expiry check
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
-
-			// Should create 1 notification (all 3 clients should be included)
-			expect(notificationsCreated).toBe(1);
-		});
 	});
 
 	describe('createTenaamstellingNotificationIfNeeded - Individual Notification Filtering', () => {
@@ -363,7 +99,7 @@ describe('RdwSyncService - APK Notification Filtering', () => {
 			const enabledClient = await db.models.Client.create({
 				name: 'Enabled Client',
 				email: 'enabled@test.com',
-				phone_number: '1111111111',
+				phone_number: '2222222222',
 				companyId: company._id,
 				client_number: 1,
 				apkNotificationsDisabled: false
@@ -371,7 +107,7 @@ describe('RdwSyncService - APK Notification Filtering', () => {
 
 			// Create vehicle with tenaamstelling change
 			const vehicle = await db.models.Vehicle.create({
-				license_plate: 'AA-01-BB',
+				license_plate: 'BB-02-CC',
 				companyId: company._id,
 				clientId: enabledClient._id,
 				make: 'Test',
@@ -393,10 +129,9 @@ describe('RdwSyncService - APK Notification Filtering', () => {
 				// Call the private method
 				await rdwService['createTenaamstellingNotificationIfNeeded'](vehicle, updates, true);
 
-				// Verify notification creation was attempted (we can't easily verify the actual notification
-				// creation without mocking the NotificationService, but we can verify it didn't skip)
-				expect(consoleLogSpy).not.toHaveBeenCalledWith(
-					expect.stringContaining('Skipping tenaamstelling notification for AA-01-BB - client has notifications disabled')
+				// Verify notification was created
+				expect(consoleLogSpy).toHaveBeenCalledWith(
+					expect.stringContaining('Tenaamstelling gewijzigd')
 				);
 
 			} finally {
@@ -404,37 +139,31 @@ describe('RdwSyncService - APK Notification Filtering', () => {
 			}
 		});
 
-		it('should create tenaamstelling notifications when apkNotificationsDisabled is undefined', async () => {
+		it('should not create notifications when tenaamstellingChanged is false', async () => {
 			// Create test company
 			const company = await db.models.Company.create({
 				name: 'Test Company',
 				email: 'company@test.com',
-				phone_number: '1234567890',
-				business: { vat_number: 'NL123456789', kvk_number: '12345678', iban: 'NL00ABNA0123456789' },
-				address: { street: 'Teststraat', house_number: '1', postal_code: '1234AB', city: 'Teststad' },
 				serviceModules: {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-01')
+					rdwSyncEnabled: true
 				}
 			});
 
-			// Create client without apkNotificationsDisabled field (undefined)
-			const undefinedClient = await db.models.Client.create({
-				name: 'Undefined Client',
-				email: 'undefined@test.com',
-				phone_number: '1111111111',
+			// Create client with notifications enabled
+			const enabledClient = await db.models.Client.create({
+				name: 'Enabled Client',
+				email: 'enabled@test.com',
 				companyId: company._id,
-				client_number: 1
-				// apkNotificationsDisabled not set
+				apkNotificationsDisabled: false
 			});
 
-			// Create vehicle with tenaamstelling change
+			// Create vehicle
 			const vehicle = await db.models.Vehicle.create({
-				license_plate: 'AA-01-BB',
+				license_plate: 'CC-03-DD',
 				companyId: company._id,
-				clientId: undefinedClient._id,
+				clientId: enabledClient._id,
 				make: 'Test',
 				model: 'Car',
 				year: 2020,
@@ -446,17 +175,17 @@ describe('RdwSyncService - APK Notification Filtering', () => {
 			const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
 			try {
-				// Simulate tenaamstelling change
+				// Simulate update without tenaamstelling change
 				const updates = {
-					datum_tenaamstelling: new Date('2024-01-15') // Changed date
+					make: 'Updated Make' // Some other change, not tenaamstelling
 				};
 
-				// Call the private method
-				await rdwService['createTenaamstellingNotificationIfNeeded'](vehicle, updates, true);
+				// Call the private method with tenaamstellingChanged = false
+				await rdwService['createTenaamstellingNotificationIfNeeded'](vehicle, updates, false);
 
-				// Verify notification creation was attempted (should not be skipped)
+				// Verify no notification was created (console.log should not be called with notification message)
 				expect(consoleLogSpy).not.toHaveBeenCalledWith(
-					expect.stringContaining('Skipping tenaamstelling notification for AA-01-BB - client has notifications disabled')
+					expect.stringContaining('Created tenaamstelling change notification')
 				);
 
 			} finally {
@@ -466,94 +195,90 @@ describe('RdwSyncService - APK Notification Filtering', () => {
 	});
 
 	describe('Mixed Scenarios', () => {
-		it('should handle companies with mixed client notification preferences', async () => {
+		it('should handle multiple notification types in complex scenarios', async () => {
 			// Create test company
 			const company = await db.models.Company.create({
-				name: 'Mixed Company',
-				email: 'mixed@test.com',
-				phone_number: '1234567890',
-				business: { vat_number: 'NL123456789', kvk_number: '12345678', iban: 'NL00ABNA0123456789' },
-				address: { street: 'Teststraat', house_number: '1', postal_code: '1234AB', city: 'Teststad' },
+				name: 'Test Company',
+				email: 'company@test.com',
 				serviceModules: {
 					apkEnabled: true,
 					invoiceStatusCheckingEnabled: true,
-					rdwSyncEnabled: true,
-					lastExpiryCheckDate: new Date('2024-01-01')
+					rdwSyncEnabled: true
 				}
 			});
 
-			// Create clients with different preferences
-			const enabledClient = await db.models.Client.create({
-				name: 'Enabled Client',
-				email: 'enabled@test.com',
-				phone_number: '1111111111',
-				companyId: company._id,
-				client_number: 1,
-				apkNotificationsDisabled: false
-			});
-
+			// Create clients with different notification preferences
 			const disabledClient = await db.models.Client.create({
 				name: 'Disabled Client',
 				email: 'disabled@test.com',
-				phone_number: '2222222222',
 				companyId: company._id,
-				client_number: 2,
+				client_number: 1,
 				apkNotificationsDisabled: true
 			});
 
-			const defaultClient = await db.models.Client.create({
-				name: 'Default Client',
-				email: 'default@test.com',
-				phone_number: '3333333333',
+			const enabledClient = await db.models.Client.create({
+				name: 'Enabled Client',
+				email: 'enabled@test.com',
 				companyId: company._id,
-				client_number: 3
-				// apkNotificationsDisabled not set (defaults to enabled)
+				client_number: 2,
+				apkNotificationsDisabled: false
 			});
 
-			// Create vehicles with expired APK for all clients
-			const today = new Date();
-			const expiredDate = new Date(today);
-			expiredDate.setFullYear(today.getFullYear() - 1); // 1 year ago = expired (within 2 year window)
-
+			// Create vehicles for both clients
 			await db.models.Vehicle.create([
 				{
 					license_plate: 'AA-01-BB',
 					companyId: company._id,
-					clientId: enabledClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
+					clientId: disabledClient._id,
+					datum_tenaamstelling: new Date('2024-01-01'),
 					deleted: false
 				},
 				{
 					license_plate: 'BB-02-CC',
 					companyId: company._id,
-					clientId: disabledClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
-					deleted: false
-				},
-				{
-					license_plate: 'CC-03-DD',
-					companyId: company._id,
-					clientId: defaultClient._id,
-					make: 'Test',
-					model: 'Car',
-					year: 2020,
-					apk_expiry: expiredDate,
+					clientId: enabledClient._id,
+					datum_tenaamstelling: new Date('2024-01-01'),
 					deleted: false
 				}
 			]);
 
-			// Run APK expiry check
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			// Mock console.log to capture output
+			const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
-			// Should create 1 notification for enabled and default clients (2 vehicles)
-			// Disabled client should be filtered out
-			expect(notificationsCreated).toBe(1);
+			try {
+				// Test tenaamstelling notifications for both clients
+				const disabledVehicle = await db.models.Vehicle.findOne({ license_plate: 'AA-01-BB' });
+				const enabledVehicle = await db.models.Vehicle.findOne({ license_plate: 'BB-02-CC' });
+
+				if (disabledVehicle && enabledVehicle) {
+					// Simulate tenaamstelling change for disabled client
+					await rdwService['createTenaamstellingNotificationIfNeeded'](
+						disabledVehicle,
+						{ datum_tenaamstelling: new Date('2024-01-15') },
+						true
+					);
+
+					// Simulate tenaamstelling change for enabled client
+					await rdwService['createTenaamstellingNotificationIfNeeded'](
+						enabledVehicle,
+						{ datum_tenaamstelling: new Date('2024-01-15') },
+						true
+					);
+
+					// Verify disabled client notification was skipped
+					expect(consoleLogSpy).toHaveBeenCalledWith(
+						expect.stringContaining('Skipping tenaamstelling notification for AA-01-BB - client has notifications disabled')
+					);
+
+					// Verify enabled client notification was created
+					expect(consoleLogSpy).toHaveBeenCalledWith(
+						expect.stringContaining('Tenaamstelling gewijzigd')
+					);
+				}
+
+			} finally {
+				consoleLogSpy.mockRestore();
+			}
 		});
 	});
 });

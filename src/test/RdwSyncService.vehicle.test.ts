@@ -1,13 +1,13 @@
 import mongoose from 'mongoose';
-import { RdwSyncService } from '../services/RdwSyncService';
+import { ApkStatusService } from '../services/ApkStatusService';
 import db from '../lib/db';
 
-describe('RdwSyncService - Vehicle-Level Filtering', () => {
-	let rdwService: RdwSyncService;
+describe('ApkStatusService - Vehicle-Level Filtering', () => {
+	let apkStatusService: ApkStatusService;
 
 	beforeAll(async () => {
-		// Initialize RDW service (database connection is handled by test setup)
-		rdwService = RdwSyncService.getInstance();
+		// Initialize APK status service (database connection is handled by test setup)
+		apkStatusService = ApkStatusService.getInstance();
 	});
 
 	beforeEach(async () => {
@@ -76,7 +76,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 			]);
 
 			// Run APK expiry check
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			// Should create 1 notification (only for the non-dismissed vehicle)
 			expect(notificationsCreated).toBe(1);
@@ -126,7 +126,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				deleted: false
 			});
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			expect(notificationsCreated).toBe(1);
 		});
@@ -170,7 +170,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				deleted: false
 			});
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			expect(notificationsCreated).toBe(1);
 		});
@@ -232,7 +232,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				}
 			]);
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			// Should create 1 notification (only for vehicle without disabled until date)
 			expect(notificationsCreated).toBe(1);
@@ -283,7 +283,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				deleted: false
 			});
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			expect(notificationsCreated).toBe(1);
 		});
@@ -327,7 +327,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				deleted: false
 			});
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			expect(notificationsCreated).toBe(1);
 		});
@@ -386,7 +386,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				}
 			]);
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			// Should create 1 notification (only for non-exported vehicle)
 			expect(notificationsCreated).toBe(1);
@@ -434,7 +434,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				deleted: false
 			});
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			expect(notificationsCreated).toBe(1);
 		});
@@ -478,7 +478,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				deleted: false
 			});
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			expect(notificationsCreated).toBe(1);
 		});
@@ -535,7 +535,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				}
 			]);
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			// Should create 1 notification (only for active vehicle)
 			expect(notificationsCreated).toBe(1);
@@ -582,7 +582,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				deleted: false
 			});
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			expect(notificationsCreated).toBe(1);
 		});
@@ -684,7 +684,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				}
 			]);
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			// Should create 1 notification with only 1 vehicle (EE-05-FF)
 			expect(notificationsCreated).toBe(1);
@@ -756,7 +756,7 @@ describe('RdwSyncService - Vehicle-Level Filtering', () => {
 				}
 			]);
 
-			const notificationsCreated = await rdwService['checkApkExpiryForCompany'](company._id.toString());
+			const notificationsCreated = await apkStatusService['checkApkExpiryForCompany'](company._id.toString());
 
 			// Should create 0 notifications
 			expect(notificationsCreated).toBe(0);
