@@ -70,8 +70,8 @@ export class ApkStatusService {
 
 		let notificationsCreated = 0;
 		const today = new Date();
-		const thirtyDaysFromNow = new Date();
-		thirtyDaysFromNow.setDate(today.getDate() + 30); // 30 days
+		const eightyDaysFromNow = new Date();
+		eightyDaysFromNow.setDate(today.getDate() + 80); // 80 days (updated from 30)
 		const twoYearsAgo = new Date();
 		twoYearsAgo.setFullYear(today.getFullYear() - 2); // 2 years ago
 
@@ -161,7 +161,7 @@ export class ApkStatusService {
 										if: {
 											$and: [
 												{ $gte: ['$apk_expiry', today] },
-												{ $lte: ['$apk_expiry', thirtyDaysFromNow] },
+												{ $lte: ['$apk_expiry', eightyDaysFromNow] },
 												{
 													$or: [
 														{ $eq: [{ $ifNull: ['$lastApkEmailSentForExpiring', null] }, null] },

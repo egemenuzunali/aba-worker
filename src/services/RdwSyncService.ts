@@ -275,8 +275,8 @@ export class RdwSyncService {
 
 		try {
 			const today = new Date();
-			const thirtyDaysFromNow = new Date();
-			thirtyDaysFromNow.setDate(today.getDate() + 30); // 30 days
+			const eightyDaysFromNow = new Date();
+			eightyDaysFromNow.setDate(today.getDate() + 80); // 80 days (updated from 30)
 			const twoYearsAgo = new Date();
 			twoYearsAgo.setFullYear(today.getFullYear() - 2); // 2 years ago
 
@@ -294,10 +294,10 @@ export class RdwSyncService {
 						}
 					},
 					{
-						// Expiring within 30 days
+						// Expiring within 80 days
 						apk_expiry: {
 							$gte: today,
-							$lte: thirtyDaysFromNow
+							$lte: eightyDaysFromNow
 						}
 					}
 				]
