@@ -6,3 +6,4 @@ export { default as System } from './system';
 export { default as Quote } from './quote';
 export { default as Invoice } from './invoice';
 export { default as PurchaseInvoice } from './purchaseInvoice';
+export { default as Notification } from './notification';

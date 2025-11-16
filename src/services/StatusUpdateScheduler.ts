@@ -35,6 +35,7 @@ export class StatusUpdateScheduler {
 
 	/**
 	 * Updates expired quotes only - other statuses are handled during API usage
+	 * Uses system-wide date tracking for consistency with RDW sync pattern
 	 */
 	private async updateExpiredQuotes(): Promise<{ updated: number; errors: string[] }> {
 		const db = await import('../lib/db');
@@ -43,22 +44,26 @@ export class StatusUpdateScheduler {
 		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired quotes using processed date tracking...');
+			console.log('🔄 Checking for expired quotes using system-wide date tracking...');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
+
+			// Get system-wide last check date
+			const systemDoc = await db.default.models.System.findOne();
+			const lastCheckDate = systemDoc?.lastQuoteExpiryCheck || new Date('2020-01-01');
+
+			console.log(`📅 Last quote expiry check: ${lastCheckDate.toISOString()}`);
 
 			// Get all companies with invoice status checking enabled
 			const enabledCompanies = await db.default.models.Company.find({
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-			}).select('_id name serviceModules.lastExpiryCheckDate');
+			}).select('_id name');
 
 			console.log(`📊 Processing ${enabledCompanies.length} companies for expired quotes`);
 
-			// Process each company individually to track their last check date
+			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
 				try {
-					const lastCheckDate = company.serviceModules?.lastExpiryCheckDate || new Date('2020-01-01');
-
 					// Find expired quotes for this company that are newer than last check
 					const expiredQuotes = await db.default.models.Quote.find(
 						{
@@ -67,7 +72,7 @@ export class StatusUpdateScheduler {
 							status: { $nin: [QUOTE_STATUS.COMPLETED, QUOTE_STATUS.CONFIRMED, QUOTE_STATUS.EXPIRED] },
 							expiration_date: {
 								$lt: tomorrowStartOfDay,
-								$gt: lastCheckDate // Only newer than last check
+								$gt: lastCheckDate // System-wide check date
 							}
 						},
 						{
@@ -105,18 +110,15 @@ export class StatusUpdateScheduler {
 						}
 					}
 
-					// Update the company's last expiry check date
-					await db.default.models.Company.updateOne(
-						{ _id: company._id },
-						{ $set: { 'serviceModules.lastExpiryCheckDate': new Date() } }
-					);
-
 				} catch (companyError) {
 					const errorMsg = `Failed to process expired quotes for company ${company.name}: ${companyError}`;
 					console.error('❌', errorMsg);
 					errors.push(errorMsg);
 				}
 			}
+
+			// Update system-wide timestamp once after all companies processed
+			await this.updateSystemExpiryCheckDate('quote');
 
 			console.log(`✅ Quote expiry check completed: ${totalUpdated} quotes marked as expired across ${enabledCompanies.length} companies`);
 
@@ -131,6 +133,7 @@ export class StatusUpdateScheduler {
 
 	/**
 	 * Updates expired invoices only - other statuses are handled during API usage
+	 * Uses system-wide date tracking for consistency with RDW sync pattern
 	 */
 	private async updateExpiredInvoices(): Promise<{ updated: number; errors: string[] }> {
 		const db = await import('../lib/db');
@@ -139,22 +142,26 @@ export class StatusUpdateScheduler {
 		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired invoices using processed date tracking...');
+			console.log('🔄 Checking for expired invoices using system-wide date tracking...');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
+
+			// Get system-wide last check date
+			const systemDoc = await db.default.models.System.findOne();
+			const lastCheckDate = systemDoc?.lastInvoiceExpiryCheck || new Date('2020-01-01');
+
+			console.log(`📅 Last invoice expiry check: ${lastCheckDate.toISOString()}`);
 
 			// Get all companies with invoice status checking enabled
 			const enabledCompanies = await db.default.models.Company.find({
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-			}).select('_id name serviceModules.lastExpiryCheckDate');
+			}).select('_id name');
 
 			console.log(`📊 Processing ${enabledCompanies.length} companies for expired invoices`);
 
-			// Process each company individually to track their last check date
+			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
 				try {
-					const lastCheckDate = company.serviceModules?.lastExpiryCheckDate || new Date('2020-01-01');
-
 					// Find expired invoices for this company that are newer than last check
 					const expiredInvoices = await db.default.models.Invoice.find(
 						{
@@ -163,7 +170,7 @@ export class StatusUpdateScheduler {
 							status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.COMPLETED, INVOICE_STATUS.EXPIRED] },
 							expiration_date: {
 								$lt: tomorrowStartOfDay,
-								$gt: lastCheckDate // Only newer than last check
+								$gt: lastCheckDate // System-wide check date
 							},
 							$expr: {
 								$lt: [
@@ -213,18 +220,15 @@ export class StatusUpdateScheduler {
 						}
 					}
 
-					// Update the company's last expiry check date
-					await db.default.models.Company.updateOne(
-						{ _id: company._id },
-						{ $set: { 'serviceModules.lastExpiryCheckDate': new Date() } }
-					);
-
 				} catch (companyError) {
 					const errorMsg = `Failed to process expired invoices for company ${company.name}: ${companyError}`;
 					console.error('❌', errorMsg);
 					errors.push(errorMsg);
 				}
 			}
+
+			// Update system-wide timestamp once after all companies processed
+			await this.updateSystemExpiryCheckDate('invoice');
 
 			console.log(`✅ Invoice expiry check completed: ${totalUpdated} invoices marked as expired across ${enabledCompanies.length} companies`);
 
@@ -239,6 +243,7 @@ export class StatusUpdateScheduler {
 
 	/**
 	 * Updates expired purchase invoices only - other statuses are handled during API usage
+	 * Uses system-wide date tracking for consistency with RDW sync pattern
 	 */
 	private async updateExpiredPurchaseInvoices(): Promise<{ updated: number; errors: string[] }> {
 		const db = await import('../lib/db');
@@ -247,22 +252,26 @@ export class StatusUpdateScheduler {
 		let totalUpdated = 0;
 
 		try {
-			console.log('🔄 Checking for expired purchase invoices using processed date tracking...');
+			console.log('🔄 Checking for expired purchase invoices using system-wide date tracking...');
 
 			const tomorrowStartOfDay = this.getStartOfTomorrow();
+
+			// Get system-wide last check date
+			const systemDoc = await db.default.models.System.findOne();
+			const lastCheckDate = systemDoc?.lastPurchaseInvoiceExpiryCheck || new Date('2020-01-01');
+
+			console.log(`📅 Last purchase invoice expiry check: ${lastCheckDate.toISOString()}`);
 
 			// Get all companies with invoice status checking enabled
 			const enabledCompanies = await db.default.models.Company.find({
 				'serviceModules.invoiceStatusCheckingEnabled': { $ne: false }
-			}).select('_id name serviceModules.lastExpiryCheckDate');
+			}).select('_id name');
 
 			console.log(`📊 Processing ${enabledCompanies.length} companies for expired purchase invoices`);
 
-			// Process each company individually to track their last check date
+			// Process each company using system-wide last check date
 			for (const company of enabledCompanies) {
 				try {
-					const lastCheckDate = company.serviceModules?.lastExpiryCheckDate || new Date('2020-01-01');
-
 					// Update expired purchase invoices for this company that are newer than last check
 					const expiredResult = await db.default.models.PurchaseInvoice.updateMany(
 						{
@@ -271,7 +280,7 @@ export class StatusUpdateScheduler {
 							status: { $nin: [PURCHASE_INVOICE_STATUS.COMPLETED, PURCHASE_INVOICE_STATUS.EXPIRED] },
 							expiration_date: {
 								$lt: tomorrowStartOfDay,
-								$gt: lastCheckDate // Only newer than last check
+								$gt: lastCheckDate // System-wide check date
 							},
 							$expr: {
 								$lt: [
@@ -285,18 +294,15 @@ export class StatusUpdateScheduler {
 
 					totalUpdated += expiredResult.modifiedCount;
 
-					// Update the company's last expiry check date
-					await db.default.models.Company.updateOne(
-						{ _id: company._id },
-						{ $set: { 'serviceModules.lastExpiryCheckDate': new Date() } }
-					);
-
 				} catch (companyError) {
 					const errorMsg = `Failed to process expired purchase invoices for company ${company.name}: ${companyError}`;
 					console.error('❌', errorMsg);
 					errors.push(errorMsg);
 				}
 			}
+
+			// Update system-wide timestamp once after all companies processed
+			await this.updateSystemExpiryCheckDate('purchaseInvoice');
 
 			console.log(`✅ Purchase invoice expiry check completed: ${totalUpdated} purchase invoices marked as expired across ${enabledCompanies.length} companies`);
 
@@ -582,6 +588,38 @@ export class StatusUpdateScheduler {
 			status[name] = !!job;
 		});
 		return status;
+	}
+
+	/**
+	 * Update system-wide expiry check timestamp
+	 */
+	private async updateSystemExpiryCheckDate(type: 'quote' | 'invoice' | 'purchaseInvoice'): Promise<void> {
+		const db = await import('../lib/db');
+		try {
+			const fieldMap = {
+				quote: 'lastQuoteExpiryCheck',
+				invoice: 'lastInvoiceExpiryCheck',
+				purchaseInvoice: 'lastPurchaseInvoiceExpiryCheck'
+			};
+
+			const fieldName = fieldMap[type];
+
+			// Find or create system document
+			let systemDoc = await db.default.models.System.findOne();
+
+			if (!systemDoc) {
+				systemDoc = await db.default.models.System.create({
+					[fieldName]: new Date(),
+				});
+			} else {
+				(systemDoc as any)[fieldName] = new Date();
+				await systemDoc.save();
+			}
+
+			console.log(`📅 System ${type} expiry check date updated: ${(systemDoc as any)[fieldName]}`);
+		} catch (error) {
+			console.error(`❌ Failed to update system ${type} expiry check date:`, error);
+		}
 	}
 
 	/**
