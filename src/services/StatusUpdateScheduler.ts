@@ -540,18 +540,18 @@ export class StatusUpdateScheduler {
 			console.log('⏭️  RDW full sync scheduler disabled');
 		}
 
-		// Schedule weekly APK status check (every Sunday at 1:30 AM)
+		// Schedule daily APK status check (every day at 1:30 AM)
 		if (config.enableApkStatusCheck) {
-			const weeklyApkStatusCheckJob = cron.schedule('30 1 * * 0', () => {
+			const dailyApkStatusCheckJob = cron.schedule('30 1 * * *', () => {
 				this.runApkStatusCheck();
 			}, {
 				scheduled: false,
 				timezone: 'Europe/Amsterdam'
 			});
 
-			this.jobs.set('weekly-apk-status-check', weeklyApkStatusCheckJob);
-			weeklyApkStatusCheckJob.start();
-			console.log('✅ APK status check scheduler started');
+			this.jobs.set('daily-apk-status-check', dailyApkStatusCheckJob);
+			dailyApkStatusCheckJob.start();
+			console.log('✅ APK status check scheduler started (daily)');
 		} else {
 			console.log('⏭️  APK status check scheduler disabled');
 		}
@@ -580,7 +580,7 @@ export class StatusUpdateScheduler {
 			console.log('   1:00 AM  - Daily       - Expired/expiring vehicles RDW sync (fetches fresh APK data from RDW API)');
 		}
 		if (config.enableApkStatusCheck) {
-			console.log('   1:30 AM  - Weekly      - APK status check (creates notifications based on current APK status)');
+			console.log('   1:30 AM  - Daily       - APK status check (creates notifications based on current APK status)');
 		}
 		if (config.enableRdwFullSync) {
 			console.log('   2:00 AM  - Every 6wks  - Full RDW vehicle sync (only if 6+ weeks since last sync)');
