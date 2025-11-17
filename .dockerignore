@@ -8,3 +8,37 @@ docker-compose*
 README.md
 LICENSE
 .vscode
+
+# Build artifacts
+dist
+*.log
+
+# Test files and coverage
+coverage
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+test
+__tests__
+
+# Development files
+.env
+.env.*
+!.env.example
+scripts
+
+# IDE and editor files
+.idea
+.DS_Store
+*.swp
+*.swo
+*~
+
+# CI/CD files
+azure-pipelines.yml
+.github
+
+# Documentation
+*.md
+!package.json
