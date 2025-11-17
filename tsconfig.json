@@ -4,7 +4,7 @@
 		"esModuleInterop": true,
 		"target": "ESNext",
 		"moduleResolution": "node",
-		"sourceMap": true,
+		"sourceMap": false,
 		"experimentalDecorators": true,
 		"outDir": "dist",
 		"strict": true,
