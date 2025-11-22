@@ -234,27 +234,54 @@ export function determineFieldsToUpdate(currentVehicle: any, rdwData: RDWVehicle
 		updates.vehicle_type = rdwData.model;
 	}
 
-	if (rdwData.apkExpiryDate && (!currentVehicle.apk_expiry || rdwData.apkExpiryDate.getTime() !== currentVehicle.apk_expiry.getTime())) {
-		updates.apk_expiry = rdwData.apkExpiryDate;
-		// Reset email sent timestamps when APK date changes to allow new reminders
-		updates.lastApkEmailSentForExpired = null;
-		updates.lastApkEmailSentForExpiring = null;
-		// Reset dismissal fields (e.g., vehicle renewed APK), but preserve permanent dismissals
-		const hasPermanentDismissal = currentVehicle.apkRemindersDismissed === true &&
-			(currentVehicle.apkRemindersDisabledUntil === null || currentVehicle.apkRemindersDisabledUntil === undefined);
-		if (!hasPermanentDismissal) {
-			updates.apkRemindersDismissed = false;
-			updates.apkRemindersDisabledUntil = null;
+	// BUG FIX #1: APK expiry - only update if NEWER or if current is null
+	if (rdwData.apkExpiryDate) {
+		const currentApk = currentVehicle.apk_expiry ? new Date(currentVehicle.apk_expiry) : null;
+		if (!currentApk || rdwData.apkExpiryDate > currentApk) {
+			updates.apk_expiry = rdwData.apkExpiryDate;
+			// Reset email sent timestamps when APK date changes to allow new reminders
+			updates.lastApkEmailSentForExpired = null;
+			updates.lastApkEmailSentForExpiring = null;
+			// Reset dismissal fields (e.g., vehicle renewed APK), but preserve permanent dismissals
+			const hasPermanentDismissal = currentVehicle.apkRemindersDismissed === true &&
+				(currentVehicle.apkRemindersDisabledUntil === null || currentVehicle.apkRemindersDisabledUntil === undefined);
+			if (!hasPermanentDismissal) {
+				updates.apkRemindersDismissed = false;
+				updates.apkRemindersDisabledUntil = null;
+			}
 		}
 	}
 
-	if (rdwData.datumTenaamstelling && (!currentVehicle.datum_tenaamstelling || rdwData.datumTenaamstelling.getTime() !== currentVehicle.datum_tenaamstelling.getTime())) {
-		updates.datum_tenaamstelling = rdwData.datumTenaamstelling;
-		tenaamstellingChanged = true;
+	// BUG FIX #2: Construction date - only update if NEWER or if current is null (was missing entirely)
+	if (rdwData.constructionDate) {
+		const currentDate = currentVehicle.construction_date ? new Date(currentVehicle.construction_date) : null;
+		if (!currentDate || rdwData.constructionDate > currentDate) {
+			updates.construction_date = rdwData.constructionDate;
+		}
 	}
 
+	// BUG FIX #4: Tenaamstelling - only flag as changed if there was a previous value
+	if (rdwData.datumTenaamstelling) {
+		const currentTenaamstelling = currentVehicle.datum_tenaamstelling ? new Date(currentVehicle.datum_tenaamstelling) : null;
+		const hasChanged = !currentTenaamstelling || rdwData.datumTenaamstelling.getTime() !== currentTenaamstelling.getTime();
+
+		if (hasChanged) {
+			updates.datum_tenaamstelling = rdwData.datumTenaamstelling;
+			// Only flag as changed for notification if there was a previous value
+			if (currentTenaamstelling) {
+				tenaamstellingChanged = true;
+			}
+		}
+	}
+
+	// BUG FIX #3: Geexporteerd - auto-dismiss APK reminders for exported vehicles
 	if (rdwData.geexporteerd !== undefined && rdwData.geexporteerd !== currentVehicle.geexporteerd) {
 		updates.geexporteerd = rdwData.geexporteerd;
+		// Auto-dismiss APK reminders when vehicle is exported (no longer on Dutch roads)
+		if (rdwData.geexporteerd === true && currentVehicle.apkRemindersDismissed !== true) {
+			updates.apkRemindersDismissed = true;
+			logger.debug(`🚗 Auto-dismissing APK reminders for exported vehicle: ${currentVehicle.license_plate}`);
+		}
 	}
 
 	logger.debug(`📝 Update determination complete for ${currentVehicle.license_plate}: ${Object.keys(updates).length} fields to update:`, Object.keys(updates));

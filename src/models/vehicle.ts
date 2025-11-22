@@ -18,6 +18,10 @@ export const vehicleSchema = new Schema({
 		type: Date,
 		required: false,
 	},
+	construction_date: {
+		type: Date,
+		required: false,
+	},
 	datum_tenaamstelling: {
 		type: Date,
 		required: false,
