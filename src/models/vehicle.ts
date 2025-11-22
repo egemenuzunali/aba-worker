@@ -6,6 +6,14 @@ export const vehicleSchema = new Schema({
 		type: String,
 		required: false,
 	},
+	vehicle_brand: {
+		type: String,
+		required: false,
+	},
+	vehicle_type: {
+		type: String,
+		required: false,
+	},
 	apk_expiry: {
 		type: Date,
 		required: false,
@@ -29,6 +37,14 @@ export const vehicleSchema = new Schema({
 	last_rdw_sync: {
 		type: Date,
 		required: false,
+	},
+	rdw_sync_disabled: {
+		type: Boolean,
+		default: false,
+	},
+	rdw_not_found_count: {
+		type: Number,
+		default: 0,
 	},
 	lastApkEmailSentForExpired: {
 		type: Date,

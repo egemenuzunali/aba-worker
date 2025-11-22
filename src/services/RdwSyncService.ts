@@ -159,12 +159,14 @@ export class RdwSyncService {
 		// Process vehicles in pages to avoid loading all into memory
 		for (let page = 0; page < Math.ceil(totalVehicles / PAGE_SIZE); page++) {
 			// Fetch one page of vehicles - no need to populate clientId for sync operations
+			// Skip vehicles that have been disabled (not found in RDW after multiple attempts)
 			const vehicles = await db.default.models.Vehicle.find({
 				companyId: companyId,
 				deleted: { $ne: true },
-				license_plate: { $exists: true, $nin: [null, ''] }
+				license_plate: { $exists: true, $nin: [null, ''] },
+				rdw_sync_disabled: { $ne: true } // Skip vehicles with disabled RDW sync
 			})
-				.select('_id license_plate last_rdw_sync apk_expiry datum_tenaamstelling companyId clientId')
+				.select('_id license_plate last_rdw_sync apk_expiry datum_tenaamstelling companyId clientId rdw_not_found_count')
 				.skip(page * PAGE_SIZE)
 				.limit(PAGE_SIZE)
 				.lean();
@@ -207,6 +209,7 @@ export class RdwSyncService {
 								fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
 
 								if (vehicle.last_rdw_sync > fourWeeksAgo) {
+									logger.debug(`⚠️ Skipping ${vehicle.license_plate} - Recently synced (${vehicle.last_rdw_sync.toISOString()})`);
 									batchSkipped++;
 									return { synced: false, reason: 'recently_synced' };
 								}
@@ -216,12 +219,38 @@ export class RdwSyncService {
 							const rdwData = await fetchRDWVehicleData(vehicle.license_plate);
 
 							if (!rdwData) {
+								// Increment not found counter
+								const notFoundCount = (vehicle.rdw_not_found_count || 0) + 1;
+								const notFoundUpdates: any = {
+									rdw_not_found_count: notFoundCount,
+									last_rdw_sync: new Date()
+								};
+
+								// Disable RDW sync after 3 consecutive failed attempts
+								if (notFoundCount >= 3) {
+									notFoundUpdates.rdw_sync_disabled = true;
+									logger.warn(`🚫 Disabling RDW sync for ${vehicle.license_plate} - not found in RDW after ${notFoundCount} attempts`);
+								} else {
+									logger.debug(`⚠️ ${vehicle.license_plate} not found in RDW (attempt ${notFoundCount}/3)`);
+								}
+
+								await db.default.models.Vehicle.updateOne(
+									{ _id: vehicle._id },
+									{ $set: notFoundUpdates }
+								);
+
 								batchSkipped++;
 								return { synced: false, reason: 'no_data' };
 							}
 
 							// Determine which fields need updating
 							const { updates, tenaamstellingChanged } = determineFieldsToUpdate(vehicle, rdwData);
+
+							// Reset not found counter on successful fetch
+							if (vehicle.rdw_not_found_count && vehicle.rdw_not_found_count > 0) {
+								updates.rdw_not_found_count = 0;
+								logger.debug(`✅ ${vehicle.license_plate} found in RDW - resetting not found counter`);
+							}
 
 							// Format the license plate and check if it needs updating
 							const formattedLicensePlate = formatDutchLicensePlate(vehicle.license_plate);
@@ -236,12 +265,15 @@ export class RdwSyncService {
 							if (Object.keys(updates).length > 0) {
 								updates.last_rdw_sync = new Date();
 
+								logger.debug(`💾 Updating ${vehicle.license_plate} with ${Object.keys(updates).length} field changes:`, Object.keys(updates));
+
 								await db.default.models.Vehicle.updateOne(
 									{ _id: vehicle._id },
 									{ $set: updates }
 								);
 
 								batchUpdated++;
+								logger.debug(`✅ Successfully updated ${vehicle.license_plate}`);
 								return { synced: true, updated: true };
 							} else {
 								// Even if no updates, update the sync date
@@ -250,6 +282,7 @@ export class RdwSyncService {
 									{ $set: { last_rdw_sync: new Date() } }
 								);
 
+								logger.debug(`🔄 No changes needed for ${vehicle.license_plate}, updated sync timestamp only`);
 								return { synced: true, updated: false };
 							}
 						} catch (error) {
@@ -357,16 +390,25 @@ export class RdwSyncService {
 			const criticalVehicles = await db.default.models.Vehicle.find({
 				deleted: { $ne: true },
 				license_plate: { $exists: true, $nin: [null, ''] },
+				rdw_sync_disabled: { $ne: true }, // Skip vehicles with disabled RDW sync
 				apk_expiry: {
 					$gte: eightyDaysAgo,  // Expired within last 80 days (likely getting renewed)
 					$lte: eightyDaysFromNow  // Expiring within next 80 days (notification window)
 				}
 			})
-				.select('_id license_plate companyId last_rdw_sync apk_expiry clientId datum_tenaamstelling')
+				.select('_id license_plate companyId last_rdw_sync apk_expiry clientId datum_tenaamstelling vehicle_brand vehicle_type rdw_not_found_count')
 				.lean();
 
 			totalVehiclesFound = criticalVehicles.length;
 			logger.info(`Found ${totalVehiclesFound} vehicles with expired or expiring APK`);
+
+			// 🗂️ DEBUG: Log vehicle data summary
+			if (totalVehiclesFound > 0) {
+				logger.debug(`📋 Sample vehicles found (${Math.min(5, totalVehiclesFound)} shown):`);
+				criticalVehicles.slice(0, 5).forEach((vehicle, index) => {
+					logger.debug(`  ${index + 1}. ${vehicle.license_plate} (${vehicle.vehicle_brand || 'Unknown'} ${vehicle.vehicle_type || 'Unknown'}) - APK: ${vehicle.apk_expiry?.toISOString().split('T')[0] || 'N/A'} - Last sync: ${vehicle.last_rdw_sync?.toISOString().split('T')[0] || 'Never'}`);
+				});
+			}
 
 			if (totalVehiclesFound === 0) {
 				logger.debug('No vehicles need syncing');
@@ -405,26 +447,57 @@ export class RdwSyncService {
 						try {
 							// Skip if no license plate
 							if (!vehicle.license_plate) {
+								logger.debug(`⚠️ Skipping vehicle ${vehicle._id} - No license plate`);
 								batchSkipped++;
 								return { synced: false, reason: 'no_license_plate' };
 							}
 
 							// Validate Dutch license plate format
 							if (!isValidDutchLicensePlate(vehicle.license_plate)) {
+								logger.debug(`⚠️ Skipping ${vehicle.license_plate} - Invalid Dutch license plate format`);
 								batchSkipped++;
 								return { synced: false, reason: 'invalid_plate' };
 							}
 
 							// Fetch RDW data
+							logger.debug(`🔍 Syncing vehicle: ${vehicle.license_plate} (ID: ${vehicle._id})`);
 							const rdwData = await fetchRDWVehicleData(vehicle.license_plate);
 
 							if (!rdwData) {
+								// Increment not found counter
+								const notFoundCount = (vehicle.rdw_not_found_count || 0) + 1;
+								const notFoundUpdates: any = {
+									rdw_not_found_count: notFoundCount,
+									last_rdw_sync: new Date()
+								};
+
+								// Disable RDW sync after 3 consecutive failed attempts
+								if (notFoundCount >= 3) {
+									notFoundUpdates.rdw_sync_disabled = true;
+									logger.warn(`🚫 Disabling RDW sync for ${vehicle.license_plate} - not found in RDW after ${notFoundCount} attempts`);
+								} else {
+									logger.debug(`⚠️ ${vehicle.license_plate} not found in RDW (attempt ${notFoundCount}/3)`);
+								}
+
+								await db.default.models.Vehicle.updateOne(
+									{ _id: vehicle._id },
+									{ $set: notFoundUpdates }
+								);
+
 								batchSkipped++;
 								return { synced: false, reason: 'no_data' };
 							}
 
+							logger.debug(`📊 RDW data received for ${vehicle.license_plate} - Brand: ${rdwData.brand}, Model: ${rdwData.model}`);
+
 							// Determine which fields need updating
 							const { updates, tenaamstellingChanged } = determineFieldsToUpdate(vehicle, rdwData);
+
+							// Reset not found counter on successful fetch
+							if (vehicle.rdw_not_found_count && vehicle.rdw_not_found_count > 0) {
+								updates.rdw_not_found_count = 0;
+								logger.debug(`✅ ${vehicle.license_plate} found in RDW - resetting not found counter`);
+							}
 
 							// Format the license plate and check if it needs updating
 							const formattedLicensePlate = formatDutchLicensePlate(vehicle.license_plate);
@@ -439,12 +512,15 @@ export class RdwSyncService {
 							if (Object.keys(updates).length > 0) {
 								updates.last_rdw_sync = new Date();
 
+								logger.debug(`💾 Updating ${vehicle.license_plate} with ${Object.keys(updates).length} field changes:`, Object.keys(updates));
+
 								await db.default.models.Vehicle.updateOne(
 									{ _id: vehicle._id },
 									{ $set: updates }
 								);
 
 								batchUpdated++;
+								logger.debug(`✅ Successfully updated ${vehicle.license_plate}`);
 								return { synced: true, updated: true };
 							} else {
 								// Even if no updates, update the sync date
@@ -453,6 +529,7 @@ export class RdwSyncService {
 									{ $set: { last_rdw_sync: new Date() } }
 								);
 
+								logger.debug(`🔄 No changes needed for ${vehicle.license_plate}, updated sync timestamp only`);
 								return { synced: true, updated: false };
 							}
 						} catch (error) {

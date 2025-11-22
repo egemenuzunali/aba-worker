@@ -95,66 +95,121 @@ export function isValidDutchLicensePlate(licensePlate: string): boolean {
 }
 
 /**
- * Fetch vehicle data from RDW API
+ * Fetch vehicle data from RDW Open Data API
+ * Uses Socrata Open Data API with optional API token for higher rate limits
  */
 export async function fetchRDWVehicleData(licensePlate: string): Promise<RDWVehicleData | null> {
 	try {
 		logger.debug(`Fetching RDW data for license plate: ${licensePlate}`);
 
-		// Use real RDW API if API key is configured
+		// Remove dashes from license plate for the API query
+		const cleanLicensePlate = licensePlate.replace(/-/g, '').toUpperCase();
+
+		// RDW Open Data API endpoint using Socrata API
+		// m9d7-ebf2 is the dataset ID for "Gekentekende voertuigen" (Registered vehicles)
+		const apiUrl = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${encodeURIComponent(cleanLicensePlate)}`;
+
+		// Build headers - include API token if available for higher rate limits
+		const headers: Record<string, string> = {
+			'Accept': 'application/json',
+			'User-Agent': 'ABA-Worker/1.0.0'
+		};
+
+		// Use API token if configured (increases rate limit from 1000 to 50000 requests/day)
 		if (rdwApiKey) {
-			const response = await fetch(`${rdwBaseUrl}/api/vehicle/${encodeURIComponent(licensePlate)}`, {
-				headers: {
-					'X-API-Key': rdwApiKey,
-					'Accept': 'application/json',
-					'User-Agent': 'ABA-Worker/1.0.0'
-				}
-			});
-
-			if (!response.ok) {
-				if (response.status === 404) {
-					logger.debug(`No RDW data found for license plate: ${licensePlate}`);
-					return null;
-				}
-				throw new Error(`RDW API responded with status: ${response.status}`);
-			}
-
-			const data = await response.json();
-
-			// Transform RDW API response to our interface
-			return {
-				brand: data.merk,
-				model: data.handelsbenaming,
-				apkExpiryDate: data.vervaldatum_keuring ? new Date(data.vervaldatum_keuring) : undefined,
-				constructionDate: data.datum_eerste_toelating ? new Date(data.datum_eerste_toelating) : undefined,
-				datumTenaamstelling: data.datum_tenaamstelling ? new Date(data.datum_tenaamstelling) : undefined,
-				geexporteerd: data.export_indicator === 'J', // 'J' means exported in RDW
-				vehicleType: data.voertuigsoort,
-				fuelType: data.brandstof_omschrijving,
-				color: data.kleur,
-				seatingCapacity: data.aantal_zitplaatsen ? parseInt(data.aantal_zitplaatsen) : undefined,
-				weight: data.massa_ledig_voertuig ? parseInt(data.massa_ledig_voertuig) : undefined,
-				emissions: data.emissieklasse,
-				engineCapacity: data.cilinderinhoud ? parseInt(data.cilinderinhoud) : undefined,
-				power: data.nettomaximumvermogen ? parseInt(data.nettomaximumvermogen) : undefined,
-				maxSpeed: data.maximum_massa_samenstelling ? parseInt(data.maximum_massa_samenstelling) : undefined,
-			};
+			headers['X-App-Token'] = rdwApiKey;
+			logger.debug(`🔑 Using RDW API token for ${licensePlate}`);
 		} else {
-			// Fallback to mock data when no API key is configured
-			logger.debug('Using mock RDW data (no API key configured)');
-			return {
-				brand: 'Mock Brand',
-				model: 'Mock Model',
-				apkExpiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
-				constructionDate: new Date('2020-01-01'),
-				datumTenaamstelling: new Date('2023-01-01'),
-				geexporteerd: false,
-				vehicleType: 'Personenauto',
-				fuelType: 'Benzine',
-			};
+			logger.debug(`🌐 Using RDW Open Data API without token for ${licensePlate}`);
 		}
+
+		const response = await fetch(apiUrl, { headers });
+
+		if (!response.ok) {
+			if (response.status === 404) {
+				logger.debug(`❌ No RDW data found for license plate: ${licensePlate} (404)`);
+				return null;
+			}
+			throw new Error(`RDW API responded with status: ${response.status}`);
+		}
+
+		const data = await response.json();
+
+		// 📊 DEBUG: Log RDW API response
+		logger.debug(`📄 RDW API response for ${licensePlate}:`, {
+			status: response.status,
+			dataLength: Array.isArray(data) ? data.length : 0,
+			hasToken: !!rdwApiKey
+		});
+
+		// API returns an array, check if it has results
+		if (!Array.isArray(data) || data.length === 0) {
+			logger.debug(`❌ No RDW data found for license plate: ${licensePlate} (empty response)`);
+			return null;
+		}
+
+		const vehicleData = data[0]; // Take first result
+
+		// Validate required fields exist
+		if (!vehicleData.merk || !vehicleData.handelsbenaming) {
+			logger.warn(`⚠️ RDW data for ${licensePlate} missing required fields (merk or handelsbenaming)`);
+			return null;
+		}
+
+		// Helper function to parse RDW date format (YYYYMMDD)
+		const parseRDWDate = (dateStr: string | undefined): Date | undefined => {
+			if (!dateStr || dateStr.length !== 8) return undefined;
+			try {
+				const year = parseInt(dateStr.substring(0, 4));
+				const month = parseInt(dateStr.substring(4, 6)) - 1; // JS months are 0-indexed
+				const day = parseInt(dateStr.substring(6, 8));
+				const date = new Date(year, month, day);
+				return isNaN(date.getTime()) ? undefined : date;
+			} catch {
+				return undefined;
+			}
+		};
+
+		// Helper function to convert export_indicator to boolean
+		const convertExportIndicator = (indicator?: string): boolean | undefined => {
+			if (!indicator) return undefined;
+			const normalized = indicator.trim().toLowerCase();
+			if (normalized === 'ja') return true;
+			if (normalized === 'nee') return false;
+			return undefined;
+		};
+
+		// Transform RDW Open Data API response to our interface
+		const transformedData: RDWVehicleData = {
+			brand: vehicleData.merk?.trim(),
+			model: vehicleData.handelsbenaming?.trim(),
+			apkExpiryDate: parseRDWDate(vehicleData.vervaldatum_apk),
+			constructionDate: parseRDWDate(vehicleData.datum_eerste_toelating),
+			datumTenaamstelling: parseRDWDate(vehicleData.datum_tenaamstelling),
+			geexporteerd: convertExportIndicator(vehicleData.export_indicator),
+			vehicleType: vehicleData.voertuigsoort?.trim(),
+			fuelType: vehicleData.brandstof_omschrijving?.trim(),
+			color: vehicleData.eerste_kleur?.trim(),
+			seatingCapacity: vehicleData.aantal_zitplaatsen ? parseInt(vehicleData.aantal_zitplaatsen) : undefined,
+			weight: vehicleData.massa_rijklaar ? parseInt(vehicleData.massa_rijklaar) : undefined,
+			emissions: vehicleData.emissiecode_omschrijving?.trim(),
+			engineCapacity: vehicleData.cilinderinhoud ? parseInt(vehicleData.cilinderinhoud) : undefined,
+			power: vehicleData.nettomaximumvermogen ? parseInt(vehicleData.nettomaximumvermogen) : undefined,
+			maxSpeed: vehicleData.maximale_constructiesnelheid ? parseInt(vehicleData.maximale_constructiesnelheid) : undefined,
+		};
+
+		// 🔄 DEBUG: Log transformed data
+		logger.debug(`🔄 Transformed data for ${licensePlate}:`, {
+			brand: transformedData.brand,
+			model: transformedData.model,
+			apkExpiryDate: transformedData.apkExpiryDate?.toISOString().split('T')[0],
+			datumTenaamstelling: transformedData.datumTenaamstelling?.toISOString().split('T')[0]
+		});
+
+		logger.debug(`✅ Successfully fetched RDW data for ${licensePlate}`);
+		return transformedData;
 	} catch (error) {
-		logger.error(`Error fetching RDW data for ${licensePlate}`, { error: (error as Error).message });
+		logger.error(`❌ Error fetching RDW data for ${licensePlate}`, { error: (error as Error).message });
 		return null;
 	}
 }
@@ -166,6 +221,7 @@ export function determineFieldsToUpdate(currentVehicle: any, rdwData: RDWVehicle
 	updates: any;
 	tenaamstellingChanged: boolean;
 } {
+	logger.debug(`🔍 Comparing current vehicle data with RDW data for ${currentVehicle.license_plate}`);
 	const updates: any = {};
 	let tenaamstellingChanged = false;
 
@@ -200,6 +256,8 @@ export function determineFieldsToUpdate(currentVehicle: any, rdwData: RDWVehicle
 	if (rdwData.geexporteerd !== undefined && rdwData.geexporteerd !== currentVehicle.geexporteerd) {
 		updates.geexporteerd = rdwData.geexporteerd;
 	}
+
+	logger.debug(`📝 Update determination complete for ${currentVehicle.license_plate}: ${Object.keys(updates).length} fields to update:`, Object.keys(updates));
 
 	return { updates, tenaamstellingChanged };
 }
