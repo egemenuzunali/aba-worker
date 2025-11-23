@@ -141,12 +141,12 @@ export class RdwSyncService {
 
 		// Adaptive batch sizing and delays based on fleet size to prevent API rate limiting
 		const BATCH_SIZE = totalVehicles > 10000 ? 10 :
-		                    totalVehicles > 5000  ? 15 :
-		                    totalVehicles > 1000  ? 20 : 25;
+			totalVehicles > 5000 ? 15 :
+				totalVehicles > 1000 ? 20 : 25;
 
 		const BATCH_DELAY = totalVehicles > 10000 ? 2000 :
-		                    totalVehicles > 5000  ? 1500 :
-		                    totalVehicles > 1000  ? 1000 : 500;
+			totalVehicles > 5000 ? 1500 :
+				totalVehicles > 1000 ? 1000 : 500;
 
 		logger.debug(`Processing company vehicles`, {
 			companyId,
@@ -417,12 +417,12 @@ export class RdwSyncService {
 
 			// Adaptive batch sizing based on number of critical vehicles to prevent API rate limiting
 			const BATCH_SIZE = totalVehiclesFound > 2000 ? 10 :
-			                    totalVehiclesFound > 1000 ? 15 :
-			                    totalVehiclesFound > 500  ? 20 : 25;
+				totalVehiclesFound > 1000 ? 15 :
+					totalVehiclesFound > 500 ? 20 : 25;
 
 			const BATCH_DELAY = totalVehiclesFound > 2000 ? 2000 :
-			                    totalVehiclesFound > 1000 ? 1500 :
-			                    totalVehiclesFound > 500  ? 1000 : 500;
+				totalVehiclesFound > 1000 ? 1500 :
+					totalVehiclesFound > 500 ? 1000 : 500;
 
 			logger.debug(`Using adaptive batching for critical vehicles`, {
 				batchSize: BATCH_SIZE,
