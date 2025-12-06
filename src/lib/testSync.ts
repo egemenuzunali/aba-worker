@@ -5,6 +5,8 @@ import { StatusUpdateScheduler } from '../services/StatusUpdateScheduler';
 import { RdwSyncService } from '../services/RdwSyncService';
 import { ApkStatusService } from '../services/ApkStatusService';
 import { MaintenanceReminderService } from '../services/MaintenanceReminderService';
+import { QuarterlyReportService } from '../services/QuarterlyReportService';
+import { MonthlyInsightsService } from '../services/MonthlyInsightsService';
 import db from './db';
 
 /**
@@ -16,6 +18,8 @@ import db from './db';
  * - TEST_SYNC_APK_STATUS=true: Enable APK status check test (notifications only, no RDW sync)
  * - TEST_SYNC_MAINTENANCE=true: Enable maintenance reminder test
  * - TEST_SYNC_RDW=true: Enable RDW sync test
+ * - TEST_SYNC_QUARTERLY_REPORT=true: Enable quarterly report email test
+ * - TEST_SYNC_MONTHLY_INSIGHTS=true: Enable monthly insights email test
  * - TEST_SYNC_COMPANY_ID=<company_id>: Specify company ID for testing (optional)
  */
 export async function runTestSync(): Promise<void> {
@@ -24,6 +28,8 @@ export async function runTestSync(): Promise<void> {
 		apkStatus: process.env.TEST_SYNC_APK_STATUS === 'true',
 		maintenance: process.env.TEST_SYNC_MAINTENANCE === 'true',
 		rdw: process.env.TEST_SYNC_RDW === 'true',
+		quarterlyReport: process.env.TEST_SYNC_QUARTERLY_REPORT === 'true',
+		monthlyInsights: process.env.TEST_SYNC_MONTHLY_INSIGHTS === 'true',
 	};
 
 	// Get test company ID from environment
@@ -47,6 +53,8 @@ export async function runTestSync(): Promise<void> {
 	console.log(`   APK Status Check: ${testFlags.apkStatus ? '✅' : '❌'}`);
 	console.log(`   Maintenance: ${testFlags.maintenance ? '✅' : '❌'}`);
 	console.log(`   RDW Sync: ${testFlags.rdw ? '✅' : '❌'}`);
+	console.log(`   Quarterly Report: ${testFlags.quarterlyReport ? '✅' : '❌'}`);
+	console.log(`   Monthly Insights: ${testFlags.monthlyInsights ? '✅' : '❌'}`);
 
 	try {
 		let completedTests = 0;
@@ -170,6 +178,54 @@ export async function runTestSync(): Promise<void> {
 				completedTests++;
 			} else {
 				console.log('⚠️  No suitable companies found for RDW test, skipping...');
+			}
+		}
+
+		// Test 5: Quarterly Report - Send quarterly report email for a specific company
+		if (testFlags.quarterlyReport) {
+			console.log('📊 Testing QuarterlyReportService...');
+			const quarterlyService = QuarterlyReportService.getInstance();
+
+			if (testCompanyId) {
+				const company = await db.models.Company.findById(testCompanyId).select('_id name serviceModules').lean();
+				if (company) {
+					if (company.serviceModules?.quarterlyReportEnabled === false) {
+						console.log(`⚠️  Company ${company.name} has quarterly reports disabled, skipping...`);
+					} else {
+						console.log(`   Sending quarterly report to company: ${company.name} (${company._id})`);
+						await quarterlyService.sendReportForCompany(testCompanyId);
+						console.log('✅ QuarterlyReportService test completed');
+						completedTests++;
+					}
+				} else {
+					console.log(`⚠️  Company ID ${testCompanyId} not found, skipping quarterly report test...`);
+				}
+			} else {
+				console.log('⚠️  TEST_SYNC_COMPANY_ID required for quarterly report test, skipping...');
+			}
+		}
+
+		// Test 6: Monthly Insights - Send monthly insights email for a specific company
+		if (testFlags.monthlyInsights) {
+			console.log('📈 Testing MonthlyInsightsService...');
+			const monthlyService = MonthlyInsightsService.getInstance();
+
+			if (testCompanyId) {
+				const company = await db.models.Company.findById(testCompanyId).select('_id name serviceModules').lean();
+				if (company) {
+					if (company.serviceModules?.monthlyInsightsEnabled === false) {
+						console.log(`⚠️  Company ${company.name} has monthly insights disabled, skipping...`);
+					} else {
+						console.log(`   Sending monthly insights to company: ${company.name} (${company._id})`);
+						await monthlyService.sendInsightsForCompany(testCompanyId);
+						console.log('✅ MonthlyInsightsService test completed');
+						completedTests++;
+					}
+				} else {
+					console.log(`⚠️  Company ID ${testCompanyId} not found, skipping monthly insights test...`);
+				}
+			} else {
+				console.log('⚠️  TEST_SYNC_COMPANY_ID required for monthly insights test, skipping...');
 			}
 		}
 
