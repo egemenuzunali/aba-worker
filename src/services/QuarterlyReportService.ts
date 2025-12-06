@@ -226,13 +226,16 @@ export class QuarterlyReportService {
 		// Get the previous quarter's date range
 		const { start: quarterStart, end: quarterEnd, name: quarterName } = this.getPreviousQuarterRange();
 
-		// Get open invoices for the previous quarter
+		// Get open invoices for the quarter
 		const invoices = await this.getOpenInvoices(company._id.toString(), quarterStart, quarterEnd);
 
 		// Calculate summary statistics
 		const totalOpenAmount = invoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
 		const totalOpenInvoices = invoices.length;
 		const overdueInvoices = invoices.filter(inv => inv.daysOverdue > 0).length;
+		const overdueAmount = invoices
+			.filter(inv => inv.daysOverdue > 0)
+			.reduce((sum, inv) => sum + inv.totalAmount, 0);
 
 		// Generate email content
 		const ownerName = owner.firstName
@@ -247,11 +250,12 @@ export class QuarterlyReportService {
 			totalOpenAmount,
 			totalOpenInvoices,
 			overdueInvoices,
+			overdueAmount,
 			invoices,
-			frontendUrl
+			frontendUrl,
 		});
 
-		// Generate PDF
+		// Generate PDF with detailed invoice list
 		const pdfBuffer = await generateQuarterlyReportPdf({
 			companyName: company.name,
 			quarterName,
@@ -271,11 +275,11 @@ export class QuarterlyReportService {
 		await sendMail({
 			from: `${process.env.APP_NAME || 'ABA'} <${process.env.APP_NOREPLY_EMAIL}>`,
 			to: recipientEmail,
-			subject: `Kwartaaloverzicht Openstaande Facturen - ${quarterName} - ${company.name}`,
+			subject: `Kwartaaloverzicht Facturen ${quarterName} - ${company.name}`,
 			html: emailContent.html,
 			text: emailContent.text,
 			attachments: [{
-				filename: `Kwartaaloverzicht-${company.name.replace(/[^a-zA-Z0-9]/g, '-')}-${quarterName.replace(' ', '-')}.pdf`,
+				filename: `Kwartaaloverzicht-Facturen-${company.name.replace(/[^a-zA-Z0-9]/g, '-')}-${quarterName.replace(' ', '-')}.pdf`,
 				data: pdfBuffer
 			}]
 		});
@@ -284,7 +288,8 @@ export class QuarterlyReportService {
 			companyId: company._id.toString(),
 			totalOpenInvoices,
 			totalOpenAmount,
-			overdueInvoices
+			overdueInvoices,
+			overdueAmount,
 		});
 	}
 

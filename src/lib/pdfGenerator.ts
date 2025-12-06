@@ -26,6 +26,25 @@ const formatDate = (date: Date): string => {
 	return new Date(date).toLocaleDateString('nl-NL');
 };
 
+// Page layout constants
+const PAGE_WIDTH = 595.28; // A4 width in points
+const PAGE_HEIGHT = 841.89; // A4 height in points
+const MARGIN = 50;
+const CONTENT_WIDTH = PAGE_WIDTH - (MARGIN * 2);
+const PAGE_BOTTOM = PAGE_HEIGHT - 70; // Leave room for footer
+
+// Colors
+const COLORS = {
+	primary: '#667eea',
+	text: '#2c3e50',
+	lightGray: '#f8f9fa',
+	borderGray: '#dee2e6',
+	danger: '#EC0000',
+	warning: '#ffc107',
+	white: '#ffffff',
+	footerGray: '#7f8c8d'
+};
+
 /**
  * Generate a PDF buffer for the quarterly open invoice report
  */
@@ -45,7 +64,7 @@ export const generateQuarterlyReportPdf = async (params: QuarterlyReportPdfParam
 			// Create PDF document
 			const doc = new PDFDocument({
 				size: 'A4',
-				margin: 50,
+				margin: MARGIN,
 				info: {
 					Title: `Kwartaaloverzicht Openstaande Facturen - ${quarterName}`,
 					Author: companyName,
@@ -54,213 +73,197 @@ export const generateQuarterlyReportPdf = async (params: QuarterlyReportPdfParam
 				}
 			});
 
-			// Collect PDF buffer
+			// Collect PDF buffer chunks
 			const chunks: Buffer[] = [];
 			doc.on('data', (chunk: Buffer) => chunks.push(chunk));
 			doc.on('end', () => resolve(Buffer.concat(chunks)));
 			doc.on('error', reject);
 
-			// Colors
-			const primaryColor = '#667eea';
-			const textColor = '#2c3e50';
-			const lightGray = '#f8f9fa';
-			const borderGray = '#dee2e6';
-			const dangerColor = '#EC0000';
-			const warningColor = '#ffc107';
-
-			// Header
-			doc.rect(0, 0, doc.page.width, 100)
-				.fill(primaryColor);
-
-			doc.fillColor('#ffffff')
-				.fontSize(24)
-				.font('Helvetica-Bold')
-				.text('Kwartaaloverzicht Openstaande Facturen', 50, 35);
-
-			doc.fontSize(12)
-				.font('Helvetica')
-				.text(`${companyName} - ${quarterName}`, 50, 65);
-
-			// Reset position
-			doc.y = 120;
-
-			// Summary section
-			doc.fillColor(textColor)
-				.fontSize(16)
-				.font('Helvetica-Bold')
-				.text('Samenvatting', 50, doc.y);
-
-			doc.y += 15;
-
-			// Summary box
-			const summaryY = doc.y;
-			doc.rect(50, summaryY, doc.page.width - 100, 80)
-				.fill(lightGray);
-
-			doc.fillColor(textColor)
-				.fontSize(11)
-				.font('Helvetica');
-
-			const col1X = 70;
-			const col2X = 250;
-			const col3X = 400;
-
-			doc.font('Helvetica-Bold').text('Totaal Openstaand:', col1X, summaryY + 15);
-			doc.font('Helvetica').text(formatCurrency(totalOpenAmount), col1X, summaryY + 30);
-
-			doc.font('Helvetica-Bold').text('Openstaande Facturen:', col2X, summaryY + 15);
-			doc.font('Helvetica').text(totalOpenInvoices.toString(), col2X, summaryY + 30);
-
-			doc.font('Helvetica-Bold').text('Verlopen Facturen:', col3X, summaryY + 15);
-			doc.fillColor(overdueInvoices > 0 ? dangerColor : textColor)
-				.font('Helvetica')
-				.text(overdueInvoices.toString(), col3X, summaryY + 30);
-
-			doc.fillColor(textColor);
-
-			doc.font('Helvetica')
-				.fontSize(9)
-				.text(`Gegenereerd op: ${formatDate(generatedDate)}`, col1X, summaryY + 55);
-
-			doc.y = summaryY + 100;
-
-			// Invoices table
-			if (invoices.length > 0) {
-				doc.fontSize(16)
-					.font('Helvetica-Bold')
-					.text('Openstaande Facturen', 50, doc.y);
-
-				doc.y += 20;
-
-				// Table header
-				const tableTop = doc.y;
-				const tableWidth = doc.page.width - 100;
-				const colWidths = [60, 140, 70, 70, 80, 70]; // Factuurnr, Klant, Datum, Vervaldatum, Bedrag, Verlopen
-				const colX = [50];
-				for (let i = 1; i < colWidths.length; i++) {
-					colX.push(colX[i - 1] + colWidths[i - 1]);
-				}
-
-				// Header background
-				doc.rect(50, tableTop, tableWidth, 25)
-					.fill(lightGray);
-
-				// Header text
-				doc.fillColor(textColor)
-					.fontSize(9)
-					.font('Helvetica-Bold');
-
-				const headers = ['Factuurnr.', 'Klant', 'Datum', 'Vervaldatum', 'Bedrag', 'Verlopen'];
-				headers.forEach((header, i) => {
-					doc.text(header, colX[i] + 5, tableTop + 8, { width: colWidths[i] - 10 });
-				});
-
-				// Table rows
-				doc.font('Helvetica').fontSize(9);
-				let rowY = tableTop + 25;
-				const rowHeight = 22;
-				const pageBottom = doc.page.height - 80;
-
-				for (const invoice of invoices) {
-					// Check if we need a new page
-					if (rowY + rowHeight > pageBottom) {
-						doc.addPage();
-						rowY = 50;
-
-						// Repeat header on new page
-						doc.rect(50, rowY, tableWidth, 25)
-							.fill(lightGray);
-
-						doc.fillColor(textColor)
-							.fontSize(9)
-							.font('Helvetica-Bold');
-
-						headers.forEach((header, i) => {
-							doc.text(header, colX[i] + 5, rowY + 8, { width: colWidths[i] - 10 });
-						});
-
-						doc.font('Helvetica');
-						rowY += 25;
-					}
-
-					// Draw row border
-					doc.strokeColor(borderGray)
-						.lineWidth(0.5)
-						.moveTo(50, rowY + rowHeight)
-						.lineTo(50 + tableWidth, rowY + rowHeight)
-						.stroke();
-
-					// Row data
-					doc.fillColor(textColor);
-					doc.text(invoice.invoiceNumber.toString(), colX[0] + 5, rowY + 6, { width: colWidths[0] - 10 });
-
-					// Truncate client name if too long
-					const clientName = invoice.clientName.length > 25
-						? invoice.clientName.substring(0, 22) + '...'
-						: invoice.clientName;
-					doc.text(clientName, colX[1] + 5, rowY + 6, { width: colWidths[1] - 10 });
-
-					doc.text(formatDate(invoice.invoiceDate), colX[2] + 5, rowY + 6, { width: colWidths[2] - 10 });
-					doc.text(formatDate(invoice.expirationDate), colX[3] + 5, rowY + 6, { width: colWidths[3] - 10 });
-					doc.text(formatCurrency(invoice.totalAmount), colX[4] + 5, rowY + 6, { width: colWidths[4] - 10 });
-
-					// Overdue with color coding
-					if (invoice.daysOverdue > 0) {
-						const overdueColor = invoice.daysOverdue > 30 ? dangerColor : warningColor;
-						doc.fillColor(overdueColor)
-							.text(`${invoice.daysOverdue} dagen`, colX[5] + 5, rowY + 6, { width: colWidths[5] - 10 });
-					} else {
-						doc.fillColor(textColor)
-							.text('-', colX[5] + 5, rowY + 6, { width: colWidths[5] - 10 });
-					}
-
-					rowY += rowHeight;
-				}
-
-				// Total row
-				doc.rect(50, rowY, tableWidth, 25)
-					.fill(primaryColor);
-
-				doc.fillColor('#ffffff')
-					.font('Helvetica-Bold')
-					.text('Totaal', colX[0] + 5, rowY + 8);
-				doc.text(`${totalOpenInvoices} facturen`, colX[1] + 5, rowY + 8);
-				doc.text(formatCurrency(totalOpenAmount), colX[4] + 5, rowY + 8);
-
-			} else {
-				// No invoices message
-				doc.fontSize(12)
-					.font('Helvetica')
-					.fillColor(textColor)
-					.text('Er zijn geen openstaande facturen voor deze periode.', 50, doc.y + 20);
+			// Table configuration
+			const tableWidth = CONTENT_WIDTH;
+			const colWidths = [55, 145, 70, 75, 80, 65];
+			const colX: number[] = [];
+			let xPos = MARGIN;
+			for (const width of colWidths) {
+				colX.push(xPos);
+				xPos += width;
 			}
+			const headers = ['Factuurnr.', 'Klant', 'Datum', 'Vervaldatum', 'Bedrag', 'Verlopen'];
+			const rowHeight = 20;
+			const headerHeight = 24;
 
-			// Footer on each page
-			// bufferedPageRange returns { start: N, count: M } where start is 0-indexed
-			const range = doc.bufferedPageRange();
-			for (let i = 0; i < range.count; i++) {
-				doc.switchToPage(range.start + i);
+			let currentPage = 1;
 
+			// Draw footer on current page using save/restore to not affect document state
+			const drawFooter = () => {
+				doc.save();
 				// Footer line
-				doc.strokeColor(borderGray)
+				doc.strokeColor(COLORS.borderGray)
 					.lineWidth(1)
-					.moveTo(50, doc.page.height - 50)
-					.lineTo(doc.page.width - 50, doc.page.height - 50)
+					.moveTo(MARGIN, PAGE_HEIGHT - 50)
+					.lineTo(PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 50)
 					.stroke();
 
 				// Footer text
-				doc.fillColor('#7f8c8d')
+				doc.fillColor(COLORS.footerGray)
 					.fontSize(8)
-					.font('Helvetica')
-					.text(
-						`${process.env.APP_NAME || 'ABA'} - Kwartaaloverzicht ${quarterName} - Pagina ${i + 1} van ${range.count}`,
-						50,
-						doc.page.height - 40,
-						{ align: 'center', width: doc.page.width - 100 }
-					);
+					.font('Helvetica');
+
+				const footerText = `${process.env.APP_NAME || 'ABA'} - Kwartaaloverzicht ${quarterName} - Pagina ${currentPage}`;
+				const textWidth = doc.widthOfString(footerText);
+				const textX = (PAGE_WIDTH - textWidth) / 2;
+				doc.text(footerText, textX, PAGE_HEIGHT - 35, { lineBreak: false });
+				doc.restore();
+			};
+
+			// Helper function to draw table header
+			const drawTableHeader = (y: number): number => {
+				doc.rect(MARGIN, y, tableWidth, headerHeight).fill(COLORS.lightGray);
+				doc.fillColor(COLORS.text).fontSize(9).font('Helvetica-Bold');
+				headers.forEach((header, i) => {
+					doc.text(header, colX[i] + 4, y + 7, {
+						width: colWidths[i] - 8,
+						lineBreak: false
+					});
+				});
+				return y + headerHeight;
+			};
+
+			// Helper to create new page
+			const createNewPage = (): number => {
+				drawFooter();
+				doc.addPage();
+				currentPage++;
+				return MARGIN;
+			};
+
+			// ===== PAGE 1: Header and Summary =====
+
+			// Header banner
+			doc.rect(0, 0, PAGE_WIDTH, 100).fill(COLORS.primary);
+			doc.fillColor(COLORS.white)
+				.fontSize(22)
+				.font('Helvetica-Bold')
+				.text('Kwartaaloverzicht Openstaande Facturen', MARGIN, 35, { lineBreak: false });
+			doc.fontSize(12)
+				.font('Helvetica')
+				.text(`${companyName} - ${quarterName}`, MARGIN, 62, { lineBreak: false });
+
+			// Summary section
+			let y = 120;
+			doc.fillColor(COLORS.text).fontSize(16).font('Helvetica-Bold')
+				.text('Samenvatting', MARGIN, y, { lineBreak: false });
+
+			y += 25;
+
+			// Summary box
+			doc.rect(MARGIN, y, CONTENT_WIDTH, 75).fill(COLORS.lightGray);
+
+			const summaryCol1 = MARGIN + 20;
+			const summaryCol2 = MARGIN + 180;
+			const summaryCol3 = MARGIN + 340;
+
+			doc.fillColor(COLORS.text).fontSize(10).font('Helvetica-Bold');
+			doc.text('Totaal Openstaand:', summaryCol1, y + 15, { lineBreak: false });
+			doc.text('Openstaande Facturen:', summaryCol2, y + 15, { lineBreak: false });
+			doc.text('Verlopen Facturen:', summaryCol3, y + 15, { lineBreak: false });
+
+			doc.font('Helvetica').fontSize(11);
+			doc.text(formatCurrency(totalOpenAmount), summaryCol1, y + 32, { lineBreak: false });
+			doc.text(totalOpenInvoices.toString(), summaryCol2, y + 32, { lineBreak: false });
+			doc.fillColor(overdueInvoices > 0 ? COLORS.danger : COLORS.text)
+				.text(overdueInvoices.toString(), summaryCol3, y + 32, { lineBreak: false });
+
+			doc.fillColor(COLORS.text).fontSize(9).font('Helvetica')
+				.text(`Gegenereerd op: ${formatDate(generatedDate)}`, summaryCol1, y + 52, { lineBreak: false });
+
+			y += 95;
+
+			// ===== Invoices Table =====
+			if (invoices.length > 0) {
+				doc.fillColor(COLORS.text).fontSize(16).font('Helvetica-Bold')
+					.text('Openstaande Facturen', MARGIN, y, { lineBreak: false });
+
+				y += 25;
+				y = drawTableHeader(y);
+
+				// Draw invoice rows
+				doc.font('Helvetica').fontSize(9);
+
+				for (const invoice of invoices) {
+					// Check if we need a new page
+					if (y + rowHeight > PAGE_BOTTOM) {
+						y = createNewPage();
+						y = drawTableHeader(y);
+						doc.font('Helvetica').fontSize(9);
+					}
+
+					// Row border at bottom
+					doc.strokeColor(COLORS.borderGray)
+						.lineWidth(0.5)
+						.moveTo(MARGIN, y + rowHeight)
+						.lineTo(MARGIN + tableWidth, y + rowHeight)
+						.stroke();
+
+					// Row data
+					doc.fillColor(COLORS.text);
+					doc.text(invoice.invoiceNumber.toString(), colX[0] + 4, y + 5, {
+						width: colWidths[0] - 8, lineBreak: false
+					});
+
+					const clientName = invoice.clientName.length > 22
+						? invoice.clientName.substring(0, 19) + '...'
+						: invoice.clientName;
+					doc.text(clientName, colX[1] + 4, y + 5, {
+						width: colWidths[1] - 8, lineBreak: false
+					});
+
+					doc.text(formatDate(invoice.invoiceDate), colX[2] + 4, y + 5, {
+						width: colWidths[2] - 8, lineBreak: false
+					});
+					doc.text(formatDate(invoice.expirationDate), colX[3] + 4, y + 5, {
+						width: colWidths[3] - 8, lineBreak: false
+					});
+					doc.text(formatCurrency(invoice.totalAmount), colX[4] + 4, y + 5, {
+						width: colWidths[4] - 8, lineBreak: false
+					});
+
+					// Overdue column with color coding
+					if (invoice.daysOverdue > 0) {
+						const color = invoice.daysOverdue > 30 ? COLORS.danger : COLORS.warning;
+						doc.fillColor(color).text(`${invoice.daysOverdue} dagen`, colX[5] + 4, y + 5, {
+							width: colWidths[5] - 8, lineBreak: false
+						});
+					} else {
+						doc.fillColor(COLORS.text).text('-', colX[5] + 4, y + 5, {
+							width: colWidths[5] - 8, lineBreak: false
+						});
+					}
+
+					y += rowHeight;
+				}
+
+				// Total row - check if it needs a new page
+				if (y + 24 > PAGE_BOTTOM) {
+					y = createNewPage();
+					doc.font('Helvetica').fontSize(9);
+				}
+
+				doc.rect(MARGIN, y, tableWidth, 24).fill(COLORS.primary);
+				doc.fillColor(COLORS.white).font('Helvetica-Bold').fontSize(10);
+				doc.text('Totaal', colX[0] + 4, y + 7, { lineBreak: false });
+				doc.text(`${totalOpenInvoices} facturen`, colX[1] + 4, y + 7, { lineBreak: false });
+				doc.text(formatCurrency(totalOpenAmount), colX[4] + 4, y + 7, { lineBreak: false });
+
+			} else {
+				doc.fillColor(COLORS.text).fontSize(12).font('Helvetica')
+					.text('Er zijn geen openstaande facturen voor deze periode.', MARGIN, y + 20, { lineBreak: false });
 			}
 
-			// Finalize PDF
+			// Add footer to the last page
+			drawFooter();
+
+			// Finalize the PDF
 			doc.end();
 
 		} catch (error) {
