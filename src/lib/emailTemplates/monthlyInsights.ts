@@ -40,14 +40,35 @@ export const monthlyInsightsTemplate = (params: MonthlyInsightsParams) => {
 		frontendUrl,
 	} = params;
 
-	const box = (value: string, label: string, color?: string) => `
-		<td style="padding: 3px;">
-			<div style="background: #f8f9fa; border-radius: 6px; padding: 10px 8px; text-align: center;">
-				<div style="font-size: 16px; font-weight: 600; color: ${color || '#2c3e50'}; margin-bottom: 2px;">${value}</div>
-				<div style="font-size: 10px; color: #888;">${label}</div>
+	const trendBadge = (percentage: number | undefined) => {
+		if (percentage === undefined || percentage === 0) return '';
+		const arrow = percentage > 0 ? '↑' : '↓';
+		const color = percentage > 0 ? '#28a745' : '#dc3545';
+		const value = Math.abs(Math.round(percentage));
+		return `<span style="font-size: 12px; font-weight: 600; color: ${color};">${arrow}${value}%</span>`;
+	};
+
+	const box = (value: string, label: string, color?: string, trendValue?: number) => {
+		const hasTrend = trendValue !== undefined && trendValue !== 0;
+		return `
+		<td style="padding: 4px; width: 50%;">
+			<div style="background: #f8f9fa; border-radius: 6px; padding: 12px 8px; text-align: center;">
+				<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 4px;">
+					<tr>
+						<td style="width: 20%;"></td>
+						<td style="text-align: center;">
+							<div style="font-size: 18px; font-weight: 600; color: ${color || '#2c3e50'}; word-break: break-word;">${value}</div>
+						</td>
+						<td style="width: 20%; text-align: right; vertical-align: top;">
+							${hasTrend ? trendBadge(trendValue) : ''}
+						</td>
+					</tr>
+				</table>
+				<div style="font-size: 12px; color: #888;">${label}</div>
 			</div>
 		</td>
-	`;
+	`};
+
 
 	const conversionRate = insights.quotes.created > 0
 		? Math.round((insights.quotes.confirmed / insights.quotes.created) * 100)
@@ -55,21 +76,23 @@ export const monthlyInsightsTemplate = (params: MonthlyInsightsParams) => {
 
 	const sectionHeader = (title: string) => `
 		<tr>
-			<td colspan="2" style="padding: 12px 3px 4px 3px;">
-				<div style="font-size: 10px; font-weight: 600; color: #667eea; text-transform: uppercase; letter-spacing: 0.5px;">${title}</div>
+			<td colspan="2" style="padding: 16px 4px 8px 4px;">
+				<div style="font-size: 12px; font-weight: 600; color: #667eea; text-transform: uppercase; letter-spacing: 0.5px;">${title}</div>
 			</td>
 		</tr>
 	`;
 
+	const comp = insights.comparison;
+
 	const htmlContent = `
-		<p>Beste ${ownerName},</p>
+		<p style="font-size: 15px; line-height: 1.5;">Beste ${ownerName},</p>
 
-		<p>Hieronder vindt u het overzicht van <strong>${companyName}</strong> over <strong>${monthName}</strong>.</p>
+		<p style="font-size: 14px; line-height: 1.5;">Hieronder vindt u het overzicht van <strong>${companyName}</strong> over <strong>${monthName}</strong>.</p>
 
-		<table width="100%" cellpadding="0" cellspacing="0" style="margin: 24px auto; max-width: 600px;">
+		<table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px auto; max-width: 700px; table-layout: fixed;">
 			${sectionHeader('Omzet')}
 			<tr>
-				${box(formatCurrency(insights.revenue.total), 'Totaal')}
+				${box(formatCurrency(insights.revenue.total), 'Totaal', undefined, comp?.revenueTrend)}
 				${box(formatCurrency(insights.revenue.paid), 'Ontvangen', '#28a745')}
 			</tr>
 			<tr>
@@ -79,7 +102,7 @@ export const monthlyInsightsTemplate = (params: MonthlyInsightsParams) => {
 
 			${sectionHeader('Facturen')}
 			<tr>
-				${box(insights.invoices.created.toString(), 'Gemaakt')}
+				${box(insights.invoices.created.toString(), 'Gemaakt', undefined, comp?.invoicesTrend)}
 				${box(insights.invoices.outstanding.toString(), 'Openstaand', insights.invoices.outstanding > 0 ? '#f57c00' : undefined)}
 			</tr>
 			<tr>
@@ -89,17 +112,17 @@ export const monthlyInsightsTemplate = (params: MonthlyInsightsParams) => {
 
 			${sectionHeader('Offertes')}
 			<tr>
-				${box(insights.quotes.created.toString(), 'Verstuurd')}
+				${box(insights.quotes.created.toString(), 'Verstuurd', undefined, comp?.quotesTrend)}
 				${box(insights.quotes.confirmed.toString(), 'Geaccepteerd', insights.quotes.confirmed > 0 ? '#28a745' : undefined)}
 			</tr>
 			<tr>
 				${box(`${conversionRate}%`, 'Conversie', conversionRate >= 50 ? '#28a745' : undefined)}
-				<td style="padding: 6px;"></td>
+				<td style="padding: 3px;"></td>
 			</tr>
 
 			${sectionHeader('Werkbonnen')}
 			<tr>
-				${box(insights.workOrders.created.toString(), 'Aangemaakt')}
+				${box(insights.workOrders.created.toString(), 'Aangemaakt', undefined, comp?.workOrdersTrend)}
 				${box(insights.workOrders.completed.toString(), 'Afgerond', insights.workOrders.completed > 0 ? '#28a745' : undefined)}
 			</tr>
 			<tr>
@@ -109,14 +132,14 @@ export const monthlyInsightsTemplate = (params: MonthlyInsightsParams) => {
 
 			${sectionHeader('Afspraken')}
 			<tr>
-				${box(insights.appointments.created.toString(), 'Gepland')}
+				${box(insights.appointments.created.toString(), 'Gepland', undefined, comp?.appointmentsTrend)}
 				${box(insights.appointments.completed.toString(), 'Afgerond', insights.appointments.completed > 0 ? '#28a745' : undefined)}
 			</tr>
 
 			${sectionHeader('Klanten & Voertuigen')}
 			<tr>
-				${box(insights.clients.newInPeriod.toString(), 'Nieuwe klanten')}
-				${box(insights.vehicles.newInPeriod.toString(), 'Nieuwe voertuigen')}
+				${box(insights.clients.newInPeriod.toString(), 'Nieuwe klanten', undefined, comp?.clientsTrend)}
+				${box(insights.vehicles.newInPeriod.toString(), 'Nieuwe voertuigen', undefined, comp?.vehiclesTrend)}
 			</tr>
 			<tr>
 				${box(insights.clients.total.toString(), 'Totaal klanten')}

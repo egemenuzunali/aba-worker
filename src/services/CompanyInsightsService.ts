@@ -59,6 +59,10 @@ export interface CompanyInsights {
 		revenueTrend: number; // percentage change from previous period
 		invoicesTrend: number;
 		clientsTrend: number;
+		quotesTrend: number;
+		workOrdersTrend: number;
+		appointmentsTrend: number;
+		vehiclesTrend: number;
 	};
 }
 
@@ -390,19 +394,29 @@ export class CompanyInsightsService {
 			name: 'Previous Period',
 		};
 
-		const [currentRevenue, previousRevenue] = await Promise.all([
+		const [
+			currentRevenue, previousRevenue,
+			currentInvoices, previousInvoices,
+			currentClients, previousClients,
+			currentQuotes, previousQuotes,
+			currentWorkOrders, previousWorkOrders,
+			currentAppointments, previousAppointments,
+			currentVehicles, previousVehicles,
+		] = await Promise.all([
 			this.getRevenueMetrics(companyId, currentPeriod),
 			this.getRevenueMetrics(companyId, previousPeriod),
-		]);
-
-		const [currentInvoices, previousInvoices] = await Promise.all([
 			this.getInvoiceMetrics(companyId, currentPeriod),
 			this.getInvoiceMetrics(companyId, previousPeriod),
-		]);
-
-		const [currentClients, previousClients] = await Promise.all([
 			this.getClientMetrics(companyId, currentPeriod),
 			this.getClientMetrics(companyId, previousPeriod),
+			this.getQuoteMetrics(companyId, currentPeriod),
+			this.getQuoteMetrics(companyId, previousPeriod),
+			this.getWorkOrderMetrics(companyId, currentPeriod),
+			this.getWorkOrderMetrics(companyId, previousPeriod),
+			this.getAppointmentMetrics(companyId, currentPeriod),
+			this.getAppointmentMetrics(companyId, previousPeriod),
+			this.getVehicleMetrics(companyId, currentPeriod),
+			this.getVehicleMetrics(companyId, previousPeriod),
 		]);
 
 		const calculateTrend = (current: number, previous: number): number => {
@@ -414,6 +428,10 @@ export class CompanyInsightsService {
 			revenueTrend: calculateTrend(currentRevenue.total, previousRevenue.total),
 			invoicesTrend: calculateTrend(currentInvoices.created, previousInvoices.created),
 			clientsTrend: calculateTrend(currentClients.newInPeriod, previousClients.newInPeriod),
+			quotesTrend: calculateTrend(currentQuotes.created, previousQuotes.created),
+			workOrdersTrend: calculateTrend(currentWorkOrders.created, previousWorkOrders.created),
+			appointmentsTrend: calculateTrend(currentAppointments.created, previousAppointments.created),
+			vehiclesTrend: calculateTrend(currentVehicles.newInPeriod, previousVehicles.newInPeriod),
 		};
 	}
 }
