@@ -49,6 +49,12 @@ export interface CompanyInsights {
 		created: number;
 		completed: number;
 	};
+	workOrders: {
+		created: number;
+		completed: number;
+		inProgress: number;
+		totalValue: number;
+	};
 	comparison?: {
 		revenueTrend: number; // percentage change from previous period
 		invoicesTrend: number;
@@ -128,13 +134,14 @@ export class CompanyInsightsService {
 		const startTime = Date.now();
 		logger.debug('Gathering company insights', { companyId, period: period.name });
 
-		const [revenue, invoices, quotes, clients, vehicles, appointments] = await Promise.all([
+		const [revenue, invoices, quotes, clients, vehicles, appointments, workOrders] = await Promise.all([
 			this.getRevenueMetrics(companyId, period),
 			this.getInvoiceMetrics(companyId, period),
 			this.getQuoteMetrics(companyId, period),
 			this.getClientMetrics(companyId, period),
 			this.getVehicleMetrics(companyId, period),
 			this.getAppointmentMetrics(companyId, period),
+			this.getWorkOrderMetrics(companyId, period),
 		]);
 
 		let comparison: CompanyInsights['comparison'] | undefined;
@@ -157,6 +164,7 @@ export class CompanyInsightsService {
 			clients,
 			vehicles,
 			appointments,
+			workOrders,
 			comparison,
 		};
 	}
@@ -350,6 +358,24 @@ export class CompanyInsightsService {
 		});
 
 		return { created, completed };
+	}
+
+	/**
+	 * Get work order metrics for the period
+	 */
+	private async getWorkOrderMetrics(companyId: string, period: PeriodRange): Promise<CompanyInsights['workOrders']> {
+		const workOrders = await db.models.WorkOrder.find({
+			companyId,
+			deleted: { $ne: true },
+			createdAt: { $gte: period.start, $lte: period.end },
+		}).select('status totalCost').lean();
+
+		const created = workOrders.length;
+		const completed = (workOrders as any[]).filter(w => w.status === 'done').length;
+		const inProgress = (workOrders as any[]).filter(w => w.status === 'in_progress').length;
+		const totalValue = (workOrders as any[]).reduce((sum, w) => sum + (w.totalCost || 0), 0);
+
+		return { created, completed, inProgress, totalValue };
 	}
 
 	/**

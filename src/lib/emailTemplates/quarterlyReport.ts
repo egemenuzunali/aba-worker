@@ -3,7 +3,6 @@
  * Focuses on outstanding and overdue invoices analysis
  */
 import { modernBaseTemplate, generatePlainTextVersion } from "./modernBase";
-import { formatCurrency, statCardGrid, StatCardOptions } from "./insightsComponents";
 
 export interface OpenInvoiceSummary {
 	invoiceNumber: number;
@@ -27,6 +26,15 @@ export interface QuarterlyReportParams {
 	frontendUrl: string;
 }
 
+const formatCurrency = (amount: number): string => {
+	return new Intl.NumberFormat('nl-NL', {
+		style: 'currency',
+		currency: 'EUR',
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(amount);
+};
+
 const createEmailTemplate = (htmlContent: string, companyName: string, companyLogo?: string) => {
 	return {
 		html: modernBaseTemplate(htmlContent, companyName, 'standard', companyLogo),
@@ -44,50 +52,39 @@ export const quarterlyReportTemplate = (params: QuarterlyReportParams) => {
 		totalOpenInvoices,
 		overdueInvoices,
 		overdueAmount,
-		invoices,
-		frontendUrl,
 	} = params;
 
-	// Summary cards
-	const summaryCards: StatCardOptions[] = [
-		{
-			icon: '📋',
-			label: 'Openstaande Facturen',
-			value: totalOpenInvoices.toString(),
-			color: totalOpenInvoices > 0 ? 'warning' : 'success',
-		},
-		{
-			icon: '💰',
-			label: 'Totaal Openstaand',
-			value: formatCurrency(totalOpenAmount),
-			color: totalOpenAmount > 0 ? 'warning' : 'success',
-		},
-		{
-			icon: '⚠️',
-			label: 'Verlopen Facturen',
-			value: overdueInvoices.toString(),
-			color: overdueInvoices > 0 ? 'danger' : 'success',
-		},
-		{
-			icon: '🚨',
-			label: 'Verlopen Bedrag',
-			value: formatCurrency(overdueAmount),
-			color: overdueAmount > 0 ? 'danger' : 'success',
-		},
-	];
+	// Clean box component matching monthly insights style
+	const box = (label: string, value: string, color?: string, subtext?: string) => `
+		<td style="padding: 6px;">
+			<div style="background: #f8f9fa; border-radius: 8px; padding: 16px; text-align: center;">
+				<div style="font-size: 20px; font-weight: 600; color: ${color || '#2c3e50'}; margin-bottom: 4px;">${value}</div>
+				${subtext ? `<div style="font-size: 10px; color: #aaa; margin-bottom: 2px;">${subtext}</div>` : ''}
+				<div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">${label}</div>
+			</div>
+		</td>
+	`;
 
 	const htmlContent = `
-		<h1>Kwartaaloverzicht Facturen</h1>
-
 		<p>Beste ${ownerName},</p>
 
 		<p>Hierbij ontvangt u het overzicht van openstaande facturen voor <strong>${companyName}</strong> over <strong>${quarterName}</strong>. Het volledige overzicht van openstaande facturen vindt u in de bijgevoegde PDF.</p>
 
-		<h2 style="color: #2c3e50; font-size: 18px; font-weight: 600; margin: 28px 0 12px 0;">Samenvatting</h2>
-		${statCardGrid(summaryCards)}
+		<table width="100%" cellpadding="0" cellspacing="0" style="margin: 24px 0;">
+			<tr>
+				${box('Openstaande facturen', totalOpenInvoices.toString(), totalOpenInvoices > 0 ? '#f57c00' : '#28a745')}
+				${box('Totaal openstaand', formatCurrency(totalOpenAmount), totalOpenAmount > 0 ? '#f57c00' : '#28a745')}
+			</tr>
+			<tr>
+				${box('Verlopen facturen', overdueInvoices.toString(), overdueInvoices > 0 ? '#dc3545' : '#28a745')}
+				${box('Verlopen bedrag', formatCurrency(overdueAmount), overdueAmount > 0 ? '#dc3545' : '#28a745')}
+			</tr>
+		</table>
 
-		<p style="margin-top: 24px;">Met vriendelijke groet,<br>
-		<strong>${process.env.APP_NAME || 'ABA'}</strong></p>
+		<p style="margin-top: 24px; color: #666;">
+			Met vriendelijke groet,<br>
+			${process.env.APP_NAME || 'ABA'}
+		</p>
 	`;
 
 	return createEmailTemplate(htmlContent, companyName, companyLogo);

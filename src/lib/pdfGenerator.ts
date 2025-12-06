@@ -18,7 +18,9 @@ export interface QuarterlyReportPdfParams {
 const formatCurrency = (amount: number): string => {
 	return new Intl.NumberFormat('nl-NL', {
 		style: 'currency',
-		currency: 'EUR'
+		currency: 'EUR',
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
 	}).format(amount);
 };
 

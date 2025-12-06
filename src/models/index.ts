@@ -9,3 +9,4 @@ export { default as PurchaseInvoice } from './purchaseInvoice';
 export { default as Notification } from './notification';
 export { default as User } from './user';
 export { default as WorkshopAppointment } from './workshopAppointment';
+export { default as WorkOrder } from './workOrder';
