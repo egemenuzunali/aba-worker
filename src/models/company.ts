@@ -31,6 +31,7 @@ const companySchema = new Schema({
 		invoiceStatusCheckingEnabled: { type: Boolean, default: true },
 		rdwSyncEnabled: { type: Boolean, default: true },
 		quarterlyReportEnabled: { type: Boolean, default: true },
+		monthlyInsightsEnabled: { type: Boolean, default: true },
 		lastExpiryCheckDate: { type: Date, default: () => new Date('2020-01-01') }
 	},
 	// Subscription status to check if company is active
