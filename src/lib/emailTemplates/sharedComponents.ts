@@ -58,20 +58,11 @@ export const statBox = (options: StatBoxOptions): string => {
 	const hasTrend = trend !== undefined && trend !== 0;
 
 	return `
-		<td style="padding: 4px; width: 50%;">
-			<div style="background: ${COLORS.background}; border-radius: 6px; padding: 12px 8px; text-align: center;">
-				<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 4px;">
-					<tr>
-						<td style="width: 15%;"></td>
-						<td style="text-align: center;">
-							<div style="font-size: 18px; font-weight: 600; color: ${valueColor}; word-break: break-word;">${value}</div>
-						</td>
-						<td style="width: 15%; text-align: right; vertical-align: top;">
-							${hasTrend ? trendBadge(trend) : ''}
-						</td>
-					</tr>
-				</table>
-				<div style="font-size: 12px; color: ${COLORS.textMuted};">${label}</div>
+		<td class="stat-box-cell" style="padding: 4px; width: 50%;">
+			<div class="stat-box-inner" style="background: ${COLORS.background}; border-radius: 6px; padding: 12px 8px; text-align: center;">
+				<div class="stat-box-value" style="font-size: 18px; font-weight: 600; color: ${valueColor}; word-break: break-word; margin-bottom: 4px;">${value}</div>
+				<div class="stat-box-label" style="font-size: 12px; color: ${COLORS.textMuted};">${label}</div>
+				<div style="font-size: 11px; font-weight: 600; margin-top: 4px; min-height: 14px;">${hasTrend ? trendBadge(trend) : '&nbsp;'}</div>
 			</div>
 		</td>
 	`;
@@ -119,7 +110,7 @@ export const signature = (): string => `
  * Stats table wrapper - use this to wrap stat box rows
  */
 export const statsTable = (content: string): string => `
-	<table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; table-layout: fixed;">
+	<table class="stat-box-table" width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; table-layout: fixed;">
 		${content}
 	</table>
 `;

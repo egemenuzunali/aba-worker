@@ -333,6 +333,33 @@ export const modernBaseTemplate = (content: string, companyName?: string, emailT
             }
         }
 
+        /* Stat box responsive styles */
+        @media only screen and (max-width: 480px) {
+            .stat-box-table td.stat-box-cell {
+                display: block !important;
+                width: 100% !important;
+                padding: 4px 0 !important;
+            }
+
+            .stat-box-value {
+                font-size: 20px !important;
+            }
+
+            .stat-box-label {
+                font-size: 11px !important;
+            }
+
+            .stat-box-inner {
+                padding: 14px 12px !important;
+            }
+        }
+
+        @media only screen and (max-width: 380px) {
+            .stat-box-value {
+                font-size: 16px !important;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -355,8 +382,11 @@ export const modernBaseTemplate = (content: string, companyName?: string, emailT
                 <div class="footer-content">
 					<a href="${(process.env.APP_URL || '').startsWith('http') ? process.env.APP_URL : `https://${process.env.APP_URL || ''}`}" class="footer-logo-link">
                         <img
-                            src=${process.env.APP_ICON_URL || ''}
+                            src="${process.env.APP_ICON_URL || ''}"
                             alt="${process.env.APP_NAME || 'ABA'} logo"
+                            width="60"
+                            height="60"
+                            style="display: block; margin: 0 auto 10px auto; max-width: 60px; width: 60px; height: auto;"
                         />
                     </a>
                     <p class="footer-text">© ${new Date().getFullYear()} ${process.env.APP_NAME || 'ABA'}</p>
