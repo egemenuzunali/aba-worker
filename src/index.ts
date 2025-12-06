@@ -103,6 +103,38 @@ async function startServer() {
 	// TODO: Add RDW integration endpoints here
 	// TODO: Add notification endpoints here
 
+	// Test endpoint for quarterly reports (development only)
+	if (config.nodeEnv === 'development') {
+		const { StatusUpdateScheduler } = require('./services/StatusUpdateScheduler');
+
+		// Send quarterly report to all companies
+		app.post('/test/quarterly-reports', async (req: express.Request, res: express.Response) => {
+			try {
+				const scheduler = StatusUpdateScheduler.getInstance();
+				await scheduler.runManualQuarterlyReports();
+				res.json({ success: true, message: 'Quarterly reports sent to all eligible companies' });
+			} catch (error) {
+				console.error('Failed to send quarterly reports:', error);
+				res.status(500).json({ success: false, error: (error as Error).message });
+			}
+		});
+
+		// Send quarterly report to a specific company
+		app.post('/test/quarterly-reports/:companyId', async (req: express.Request, res: express.Response) => {
+			try {
+				const { companyId } = req.params;
+				const scheduler = StatusUpdateScheduler.getInstance();
+				await scheduler.runManualQuarterlyReportForCompany(companyId);
+				res.json({ success: true, message: `Quarterly report sent for company ${companyId}` });
+			} catch (error) {
+				console.error('Failed to send quarterly report:', error);
+				res.status(500).json({ success: false, error: (error as Error).message });
+			}
+		});
+
+		console.log('📧 Test endpoints enabled: POST /test/quarterly-reports, POST /test/quarterly-reports/:companyId');
+	}
+
 	// Global error handling middleware
 	app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
 		console.error('Unhandled error:', err);

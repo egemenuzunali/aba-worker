@@ -9,6 +9,8 @@ interface System {
 	lastInvoiceExpiryCheck: Date;
 	lastPurchaseInvoiceExpiryCheck: Date;
 	lastApkStatusCheck: Date;
+	lastQuarterlyReportSent: Date;
+	lastQuarterlyReportQuarter: string; // e.g., "Q1 2025" - tracks which quarter was last processed
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -37,6 +39,14 @@ const systemSchema = new Schema<System>(
 		},
 		lastApkStatusCheck: {
 			type: Date,
+			required: false,
+		},
+		lastQuarterlyReportSent: {
+			type: Date,
+			required: false,
+		},
+		lastQuarterlyReportQuarter: {
+			type: String,
 			required: false,
 		},
 	},

@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { RdwSyncService } from './RdwSyncService';
 import { ApkStatusService } from './ApkStatusService';
 import { MaintenanceReminderService } from './MaintenanceReminderService';
+import { QuarterlyReportService } from './QuarterlyReportService';
 import { logger } from '../lib/logger';
 
 export class StatusUpdateScheduler {
@@ -502,6 +503,63 @@ export class StatusUpdateScheduler {
 	}
 
 	/**
+	 * Run quarterly report email to company owners
+	 * Sends overview of open invoices with PDF attachment
+	 */
+	private async runQuarterlyReports(): Promise<void> {
+		logger.info('Starting quarterly report generation');
+		const startTime = Date.now();
+
+		try {
+			const quarterlyReportService = QuarterlyReportService.getInstance();
+
+			// Check if it's actually the first day of a quarter
+			if (!quarterlyReportService.isFirstDayOfQuarter()) {
+				logger.info('Not the first day of a quarter, skipping quarterly reports');
+				return;
+			}
+
+			const result = await quarterlyReportService.sendQuarterlyReports();
+
+			const duration = Date.now() - startTime;
+			logger.serviceComplete('Quarterly report generation', duration, {
+				total: result.companiesProcessed,
+				successful: result.emailsSent,
+				failed: result.errors.length,
+				skipped: result.companiesProcessed - result.emailsSent,
+				duration
+			});
+		} catch (error) {
+			logger.error('Unexpected error during quarterly report generation', { error: (error as Error).message });
+		}
+	}
+
+	/**
+	 * Check if quarterly reports were missed while the worker was down
+	 * Only sends if we're within the first 7 days of a quarter
+	 */
+	private async checkMissedQuarterlyReports(): Promise<void> {
+		try {
+			const quarterlyReportService = QuarterlyReportService.getInstance();
+			const shouldSend = await quarterlyReportService.shouldSendMissedQuarterlyReport();
+
+			if (shouldSend) {
+				logger.info('Detected missed quarterly report, sending now...');
+				const result = await quarterlyReportService.sendQuarterlyReports();
+				logger.info('Missed quarterly report catch-up completed', {
+					companiesProcessed: result.companiesProcessed,
+					emailsSent: result.emailsSent,
+					errors: result.errors.length
+				});
+			} else {
+				logger.debug('No missed quarterly reports detected');
+			}
+		} catch (error) {
+			logger.error('Failed to check/send missed quarterly reports', { error: (error as Error).message });
+		}
+	}
+
+	/**
 	 * Start all schedulers based on configuration
 	 */
 	public startScheduler(): void {
@@ -591,6 +649,25 @@ export class StatusUpdateScheduler {
 			logger.debug('Maintenance reminder scheduler started');
 		}
 
+		// Schedule quarterly reports (every day at 8:00 AM - checks internally if it's first day of quarter)
+		// Runs on Jan 1, Apr 1, Jul 1, Oct 1
+		if (config.enableQuarterlyReports) {
+			const quarterlyReportJob = cron.schedule('0 8 1 1,4,7,10 *', () => {
+				this.runQuarterlyReports();
+			}, {
+				scheduled: false,
+				timezone: 'Europe/Amsterdam'
+			});
+
+			this.jobs.set('quarterly-reports', quarterlyReportJob);
+			quarterlyReportJob.start();
+			activeSchedulers.push('Quarterly reports');
+			logger.debug('Quarterly reports scheduler started');
+
+			// Check for missed quarterly reports on startup
+			this.checkMissedQuarterlyReports();
+		}
+
 		logger.info(`Scheduler initialization complete. Active schedulers: ${activeSchedulers.join(', ')}`);
 	}
 
@@ -645,6 +722,25 @@ export class StatusUpdateScheduler {
 	public async runManualMaintenanceCheck(): Promise<void> {
 		logger.info('Running manual maintenance reminder check');
 		await this.runMaintenanceReminderCheck();
+	}
+
+	/**
+	 * Run quarterly reports manually (for testing or admin triggers)
+	 * This bypasses the first-day-of-quarter check
+	 */
+	public async runManualQuarterlyReports(): Promise<void> {
+		logger.info('Running manual quarterly reports');
+		const quarterlyReportService = QuarterlyReportService.getInstance();
+		await quarterlyReportService.sendQuarterlyReports();
+	}
+
+	/**
+	 * Run quarterly report for a specific company (for testing)
+	 */
+	public async runManualQuarterlyReportForCompany(companyId: string): Promise<void> {
+		logger.info(`Running manual quarterly report for company ${companyId}`);
+		const quarterlyReportService = QuarterlyReportService.getInstance();
+		await quarterlyReportService.sendReportForCompany(companyId);
 	}
 
 	/**

@@ -2,6 +2,10 @@ import { Schema, model } from 'mongoose'
 
 // Partial schema for aba-worker - only includes fields actually used by the worker service
 const invoiceSchema = new Schema({
+	invoice_date: {
+		type: Date,
+		required: true,
+	},
 	expiration_date: {
 		type: Date,
 		required: true,
@@ -21,7 +25,7 @@ const invoiceSchema = new Schema({
 	},
 	status: {
 		type: String,
-		enum: ['CONCEPT', 'OPEN', 'SENT', 'EXPIRED', 'COMPLETED', 'DECLINED', 'CANCELLED'],
+		enum: ['CONCEPT', 'OPEN', 'SENT', 'EXPIRED', 'COMPLETED', 'DECLINED', 'CANCELLED', 'PAID'],
 		required: true,
 		default: 'OPEN',
 	},
@@ -40,6 +44,13 @@ const invoiceSchema = new Schema({
 		type: Schema.Types.ObjectId,
 		ref: 'Client',
 		required: true,
+	},
+	// Client name embedded for denormalized access
+	client: {
+		name: {
+			type: String,
+			required: false,
+		},
 	},
 }, { timestamps: true });
 

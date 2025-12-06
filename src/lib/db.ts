@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { Vehicle, Company, Client, System, Quote, Invoice, PurchaseInvoice, Notification } from '../models'
+import { Vehicle, Company, Client, System, Quote, Invoice, PurchaseInvoice, Notification, User } from '../models'
 import { mongoString } from './config'
 import { logger } from './logger'
 
@@ -13,6 +13,7 @@ interface Models {
 	Invoice: typeof Invoice;
 	PurchaseInvoice: typeof PurchaseInvoice;
 	Notification: typeof Notification;
+	User: typeof User;
 }
 
 class db {
@@ -32,7 +33,8 @@ class db {
 		Quote,
 		Invoice,
 		PurchaseInvoice,
-		Notification
+		Notification,
+		User
 	}
 
 	static async disconnect(): Promise<void> {

@@ -16,6 +16,7 @@ export interface Config {
 	enableRdwDailySync: boolean;
 	enableApkStatusCheck: boolean;
 	enableMaintenanceReminders: boolean;
+	enableQuarterlyReports: boolean;
 }
 
 function validateConfig(): Config {
@@ -38,6 +39,7 @@ function validateConfig(): Config {
 	const enableRdwDailySync = process.env.ENABLE_RDW_DAILY_SYNC !== 'false';
 	const enableApkStatusCheck = process.env.ENABLE_APK_STATUS_CHECK !== 'false';
 	const enableMaintenanceReminders = process.env.ENABLE_MAINTENANCE_REMINDERS !== 'false';
+	const enableQuarterlyReports = process.env.ENABLE_QUARTERLY_REPORTS !== 'false';
 
 	// Validate required environment variables
 	if (!mongoString) {
@@ -73,6 +75,7 @@ function validateConfig(): Config {
 	console.log(`   RDW Daily Sync: ${enableRdwDailySync ? '✅ Enabled' : '❌ Disabled'}`);
 	console.log(`   APK Status Check: ${enableApkStatusCheck ? '✅ Enabled' : '❌ Disabled'}`);
 	console.log(`   Maintenance Reminders: ${enableMaintenanceReminders ? '✅ Enabled' : '❌ Disabled'}`);
+	console.log(`   Quarterly Reports: ${enableQuarterlyReports ? '✅ Enabled' : '❌ Disabled'}`);
 
 	return {
 		port,
@@ -89,6 +92,7 @@ function validateConfig(): Config {
 		enableRdwDailySync,
 		enableApkStatusCheck,
 		enableMaintenanceReminders,
+		enableQuarterlyReports,
 	};
 }
 
@@ -110,5 +114,6 @@ export const {
 	enableRdwFullSync,
 	enableRdwDailySync,
 	enableApkStatusCheck,
-	enableMaintenanceReminders
+	enableMaintenanceReminders,
+	enableQuarterlyReports
 } = config;
