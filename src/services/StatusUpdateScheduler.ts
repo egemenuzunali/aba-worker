@@ -3,6 +3,7 @@ import { RdwSyncService } from './RdwSyncService';
 import { ApkStatusService } from './ApkStatusService';
 import { MaintenanceReminderService } from './MaintenanceReminderService';
 import { QuarterlyReportService } from './QuarterlyReportService';
+import { MonthlyInsightsService } from './MonthlyInsightsService';
 import { logger } from '../lib/logger';
 
 export class StatusUpdateScheduler {
@@ -560,6 +561,56 @@ export class StatusUpdateScheduler {
 	}
 
 	/**
+	 * Run monthly insights email to company owners
+	 * Sends business performance overview
+	 */
+	private async runMonthlyInsights(): Promise<void> {
+		logger.info('Starting monthly insights generation');
+		const startTime = Date.now();
+
+		try {
+			const monthlyInsightsService = MonthlyInsightsService.getInstance();
+			const result = await monthlyInsightsService.sendMonthlyInsights();
+
+			const duration = Date.now() - startTime;
+			logger.serviceComplete('Monthly insights generation', duration, {
+				total: result.companiesProcessed,
+				successful: result.emailsSent,
+				failed: result.errors.length,
+				skipped: result.companiesProcessed - result.emailsSent,
+				duration
+			});
+		} catch (error) {
+			logger.error('Unexpected error during monthly insights generation', { error: (error as Error).message });
+		}
+	}
+
+	/**
+	 * Check if monthly insights were missed while the worker was down
+	 * Only sends if we're within the first 5 days of the month
+	 */
+	private async checkMissedMonthlyInsights(): Promise<void> {
+		try {
+			const monthlyInsightsService = MonthlyInsightsService.getInstance();
+			const shouldSend = await monthlyInsightsService.shouldSendMissedMonthlyInsights();
+
+			if (shouldSend) {
+				logger.info('Detected missed monthly insights, sending now...');
+				const result = await monthlyInsightsService.sendMonthlyInsights();
+				logger.info('Missed monthly insights catch-up completed', {
+					companiesProcessed: result.companiesProcessed,
+					emailsSent: result.emailsSent,
+					errors: result.errors.length
+				});
+			} else {
+				logger.debug('No missed monthly insights detected');
+			}
+		} catch (error) {
+			logger.error('Failed to check/send missed monthly insights', { error: (error as Error).message });
+		}
+	}
+
+	/**
 	 * Start all schedulers based on configuration
 	 */
 	public startScheduler(): void {
@@ -668,6 +719,24 @@ export class StatusUpdateScheduler {
 			this.checkMissedQuarterlyReports();
 		}
 
+		// Schedule monthly insights (1st of every month at 9:00 AM)
+		if (config.enableMonthlyInsights) {
+			const monthlyInsightsJob = cron.schedule('0 9 1 * *', () => {
+				this.runMonthlyInsights();
+			}, {
+				scheduled: false,
+				timezone: 'Europe/Amsterdam'
+			});
+
+			this.jobs.set('monthly-insights', monthlyInsightsJob);
+			monthlyInsightsJob.start();
+			activeSchedulers.push('Monthly insights');
+			logger.debug('Monthly insights scheduler started');
+
+			// Check for missed monthly insights on startup
+			this.checkMissedMonthlyInsights();
+		}
+
 		logger.info(`Scheduler initialization complete. Active schedulers: ${activeSchedulers.join(', ')}`);
 	}
 
@@ -741,6 +810,24 @@ export class StatusUpdateScheduler {
 		logger.info(`Running manual quarterly report for company ${companyId}`);
 		const quarterlyReportService = QuarterlyReportService.getInstance();
 		await quarterlyReportService.sendReportForCompany(companyId);
+	}
+
+	/**
+	 * Run monthly insights manually (for testing or admin triggers)
+	 */
+	public async runManualMonthlyInsights(): Promise<void> {
+		logger.info('Running manual monthly insights');
+		const monthlyInsightsService = MonthlyInsightsService.getInstance();
+		await monthlyInsightsService.sendMonthlyInsights();
+	}
+
+	/**
+	 * Run monthly insights for a specific company (for testing)
+	 */
+	public async runManualMonthlyInsightsForCompany(companyId: string): Promise<void> {
+		logger.info(`Running manual monthly insights for company ${companyId}`);
+		const monthlyInsightsService = MonthlyInsightsService.getInstance();
+		await monthlyInsightsService.sendInsightsForCompany(companyId);
 	}
 
 	/**

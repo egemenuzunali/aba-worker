@@ -11,6 +11,8 @@ interface System {
 	lastApkStatusCheck: Date;
 	lastQuarterlyReportSent: Date;
 	lastQuarterlyReportQuarter: string; // e.g., "Q1 2025" - tracks which quarter was last processed
+	lastMonthlyInsightsSent: Date;
+	lastMonthlyInsightsMonth: string; // e.g., "December 2025" - tracks which month was last processed
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -46,6 +48,14 @@ const systemSchema = new Schema<System>(
 			required: false,
 		},
 		lastQuarterlyReportQuarter: {
+			type: String,
+			required: false,
+		},
+		lastMonthlyInsightsSent: {
+			type: Date,
+			required: false,
+		},
+		lastMonthlyInsightsMonth: {
 			type: String,
 			required: false,
 		},

@@ -132,7 +132,36 @@ async function startServer() {
 			}
 		});
 
-		console.log('📧 Test endpoints enabled: POST /test/quarterly-reports, POST /test/quarterly-reports/:companyId');
+		// Send monthly insights to all companies
+		app.post('/test/monthly-insights', async (req: express.Request, res: express.Response) => {
+			try {
+				const scheduler = StatusUpdateScheduler.getInstance();
+				await scheduler.runManualMonthlyInsights();
+				res.json({ success: true, message: 'Monthly insights sent to all eligible companies' });
+			} catch (error) {
+				console.error('Failed to send monthly insights:', error);
+				res.status(500).json({ success: false, error: (error as Error).message });
+			}
+		});
+
+		// Send monthly insights to a specific company
+		app.post('/test/monthly-insights/:companyId', async (req: express.Request, res: express.Response) => {
+			try {
+				const { companyId } = req.params;
+				const scheduler = StatusUpdateScheduler.getInstance();
+				await scheduler.runManualMonthlyInsightsForCompany(companyId);
+				res.json({ success: true, message: `Monthly insights sent for company ${companyId}` });
+			} catch (error) {
+				console.error('Failed to send monthly insights:', error);
+				res.status(500).json({ success: false, error: (error as Error).message });
+			}
+		});
+
+		console.log('📧 Test endpoints enabled:');
+		console.log('   POST /test/quarterly-reports');
+		console.log('   POST /test/quarterly-reports/:companyId');
+		console.log('   POST /test/monthly-insights');
+		console.log('   POST /test/monthly-insights/:companyId');
 	}
 
 	// Global error handling middleware
