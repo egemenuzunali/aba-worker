@@ -183,7 +183,7 @@ export class CompanyInsightsService {
 		const invoices = await db.models.Invoice.find({
 			companyId,
 			deleted: { $ne: true },
-			status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.CANCELLED] },
+			status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.CREDITED] },
 			invoice_date: { $gte: period.start, $lte: period.end },
 		}).select('total_incl_vat status expiration_date payments').lean();
 
@@ -198,7 +198,7 @@ export class CompanyInsightsService {
 
 			total += amount;
 
-			if (inv.status === INVOICE_STATUS.COMPLETED || paidAmount >= amount) {
+			if (inv.status === INVOICE_STATUS.COMPLETED || inv.status === INVOICE_STATUS.PAID || paidAmount >= amount) {
 				paid += amount;
 			} else {
 				const outstandingAmount = amount - paidAmount;
@@ -223,7 +223,7 @@ export class CompanyInsightsService {
 		const createdInvoices = await db.models.Invoice.find({
 			companyId,
 			deleted: { $ne: true },
-			status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.CANCELLED] },
+			status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.CREDITED] },
 			invoice_date: { $gte: period.start, $lte: period.end },
 		}).select('total_incl_vat status expiration_date payments').lean();
 
@@ -237,7 +237,7 @@ export class CompanyInsightsService {
 			totalValue += inv.total_incl_vat || 0;
 			const paidAmount = (inv.payments || []).reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
 
-			if (inv.status === INVOICE_STATUS.COMPLETED || paidAmount >= inv.total_incl_vat) {
+			if (inv.status === INVOICE_STATUS.COMPLETED || inv.status === INVOICE_STATUS.PAID || paidAmount >= inv.total_incl_vat) {
 				completed++;
 			} else {
 				outstanding++;
@@ -295,7 +295,7 @@ export class CompanyInsightsService {
 		const clientsWithOutstanding = await db.models.Invoice.distinct('clientId', {
 			companyId,
 			deleted: { $ne: true },
-			status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.COMPLETED, INVOICE_STATUS.CANCELLED] },
+			status: { $nin: [INVOICE_STATUS.CONCEPT, INVOICE_STATUS.COMPLETED, INVOICE_STATUS.PAID, INVOICE_STATUS.CREDITED] },
 		});
 
 		return {
