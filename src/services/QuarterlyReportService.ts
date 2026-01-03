@@ -180,7 +180,7 @@ export class QuarterlyReportService {
 	private async getOpenInvoices(companyId: string, quarterStart: Date, quarterEnd: Date): Promise<OpenInvoiceSummary[]> {
 		const today = new Date();
 
-		// Find all non-completed, non-cancelled invoices within the quarter
+		// Find all unpaid, non-completed invoices within the quarter
 		const openInvoices = await db.models.Invoice.find({
 			companyId,
 			deleted: { $ne: true },
@@ -188,8 +188,8 @@ export class QuarterlyReportService {
 				$nin: [
 					INVOICE_STATUS.COMPLETED,
 					INVOICE_STATUS.CONCEPT,
-					INVOICE_STATUS.CANCELLED,
-					INVOICE_STATUS.DECLINED
+					INVOICE_STATUS.PAID,
+					INVOICE_STATUS.CREDITED
 				]
 			},
 			// Filter by invoice_date within the quarter
