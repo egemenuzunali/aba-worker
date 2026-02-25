@@ -1,60 +1,29 @@
 /**
- * Mailgun email service for aba-worker
+ * Resend email service for aba-worker
  * Mirrors the backend mail.ts setup for consistency
  */
 
-import { getMailgunDomain, getMailgunApiKey, isDev } from "./env";
-import formData from 'form-data';
-import Mailgun from 'mailgun.js';
+import { Resend } from 'resend';
 import { logger } from './logger';
 
-// Configuration
-const config = {
-	apiKey: '',
-	domain: '',
-	url: "https://api.eu.mailgun.net",
-};
-
-// Initialize config lazily to avoid errors during import
-const initConfig = () => {
-	if (!config.apiKey) {
-		config.apiKey = getMailgunApiKey();
-		config.domain = getMailgunDomain();
+const getResendApiKey = (): string => {
+	const key = process.env.RESEND_API_KEY;
+	if (!key) {
+		throw new Error('RESEND_API_KEY is not set in environment variables');
 	}
-	return config;
+	return key;
 };
 
-// Mailgun client - initialized lazily
-let mg: any = null;
+// Resend client - initialized lazily
+let resend: Resend | null = null;
 
-const getMgClient = () => {
-	if (!mg) {
-		const cfg = initConfig();
-		const mailgun = new Mailgun(formData);
-		mg = mailgun.client({
-			username: 'api',
-			key: cfg.apiKey,
-			url: isDev() ? '' : cfg.url
-		});
-		logger.info('📧 Mailgun client initialized successfully');
+const getResendClient = () => {
+	if (!resend) {
+		resend = new Resend(getResendApiKey());
+		logger.info('📧 Resend client initialized successfully');
 	}
-	return mg;
+	return resend;
 };
-
-interface MailgunData {
-	from: string;
-	to: string;
-	cc?: string;
-	bcc?: string;
-	subject: string;
-	html: string;
-	text?: string;
-	'h:Reply-To'?: string;
-	attachment?: Array<{
-		filename: string;
-		data: Buffer;
-	}>;
-}
 
 export interface MailOptions {
 	from: string;
@@ -72,35 +41,36 @@ export interface MailOptions {
 }
 
 /**
- * Send an email using Mailgun
+ * Send an email using Resend
  */
 export const sendMail = async (mailOptions: MailOptions) => {
 	try {
-		const client = getMgClient();
-		const cfg = initConfig();
+		const client = getResendClient();
 
-		const data: MailgunData = {
+		// Build attachments for Resend format
+		const attachments = mailOptions.attachments?.map(attachment => ({
+			filename: attachment.filename,
+			content: attachment.data,
+		}));
+
+		const { data, error } = await client.emails.send({
 			from: mailOptions.from,
 			to: mailOptions.to,
-			cc: mailOptions.cc,
-			bcc: mailOptions.bcc,
+			cc: mailOptions.cc || undefined,
+			bcc: mailOptions.bcc || undefined,
 			subject: mailOptions.subject,
 			html: mailOptions.html,
-			text: mailOptions.text,
-			'h:Reply-To': mailOptions.replyTo,
-		};
+			text: mailOptions.text || undefined,
+			replyTo: mailOptions.replyTo || undefined,
+			attachments: attachments && attachments.length > 0 ? attachments : undefined,
+		});
 
-		// Handle attachments if present
-		if (mailOptions.attachments && mailOptions.attachments.length > 0) {
-			data.attachment = mailOptions.attachments.map(attachment => ({
-				filename: attachment.filename,
-				data: attachment.data
-			}));
+		if (error) {
+			throw new Error(error.message);
 		}
 
-		const response = await client.messages.create(cfg.domain, data);
 		logger.debug('Email sent successfully', { to: mailOptions.to, subject: mailOptions.subject });
-		return response;
+		return data;
 	} catch (error) {
 		logger.error('Failed to send email', {
 			error: (error as Error).message,
