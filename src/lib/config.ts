@@ -20,6 +20,56 @@ export interface Config {
 	enableMonthlyInsights: boolean;
 }
 
+/**
+ * Validates that all required environment variables are set for test/production.
+ * Logs warnings for missing optional vars and throws on missing required vars.
+ */
+function validateRequiredEnvVars(nodeEnv: string): void {
+	const missing: string[] = [];
+	const warnings: string[] = [];
+
+	// --- Always required ---
+	const alwaysRequired = [
+		'MONGO_STRING',
+		'APP_NAME',
+		'APP_NOREPLY_EMAIL',
+		'RESEND_API_KEY',
+	];
+	for (const key of alwaysRequired) {
+		if (!process.env[key]) missing.push(key);
+	}
+
+	// --- Required for non-dev environments (test & production) ---
+	if (nodeEnv !== 'development') {
+		const envPrefix = nodeEnv.toUpperCase(); // TEST or PRODUCTION
+		const envPrefixed = [
+			`${envPrefix}_FRONTEND_URL`,
+		];
+		for (const key of envPrefixed) {
+			if (!process.env[key]) missing.push(key);
+		}
+	}
+
+	// --- Warn on missing optional vars that affect email rendering ---
+	const optionalButRecommended = [
+		'APP_URL',
+		'APP_ICON_URL',
+		'APP_DEFAULT_LOGO_IMAGE',
+		'APP_DEFAULT_LOGO_IMAGE_BLACK',
+	];
+	for (const key of optionalButRecommended) {
+		if (!process.env[key]) warnings.push(key);
+	}
+
+	if (warnings.length > 0) {
+		console.warn(`⚠️  Optional env vars missing (emails may render incorrectly): ${warnings.join(', ')}`);
+	}
+
+	if (missing.length > 0) {
+		throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+	}
+}
+
 function validateConfig(): Config {
 	const port = parseInt(process.env.PORT || '4008', 10);
 	const mongoString = process.env.MONGO_STRING;
@@ -44,6 +94,8 @@ function validateConfig(): Config {
 	const enableMonthlyInsights = process.env.ENABLE_MONTHLY_INSIGHTS !== 'false';
 
 	// Validate required environment variables
+	validateRequiredEnvVars(nodeEnv);
+
 	if (!mongoString) {
 		throw new Error('MONGO_STRING environment variable is required');
 	}
